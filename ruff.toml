@@ -1,0 +1,12 @@
+# Formatter/linter config aligned with the Google Python Style Guide
+# (4-space indents, 80-column lines, sorted imports).
+line-length = 80
+indent-width = 4
+target-version = "py310"
+
+[lint]
+select = ["E", "F", "W", "I"]
+ignore = ["E501"]  # The formatter handles line length.
+
+[lint.isort]
+known-first-party = ["app", "api_client", "config"]

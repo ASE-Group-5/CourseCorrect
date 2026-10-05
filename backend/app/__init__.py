@@ -1,0 +1,1 @@
+"""CourseCorrect backend package."""
