@@ -9,4 +9,4 @@ select = ["E", "F", "W", "I"]
 ignore = ["E501"]  # The formatter handles line length.
 
 [lint.isort]
-known-first-party = ["app", "api_client", "config"]
+known-first-party = ["app", "api_client", "auth", "config", "ui"]
