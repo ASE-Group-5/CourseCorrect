@@ -1,7 +1,15 @@
 """Login and account creation endpoints (stories 1-2)."""
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    BeforeValidator,
+    EmailStr,
+    Field,
+)
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -23,32 +31,37 @@ class LoginRequest(BaseModel):
     password: str
 
 
+def strip_spaces(value: object) -> object:
+    return value.strip() if isinstance(value, str) else value
+
+
+def fits_bcrypt(value: str) -> str:
+    if len(value.encode()) > 72:
+        raise ValueError("Password must be at most 72 bytes long")
+    return value
+
+
+# Field rules shared by sign-up and by coordinators managing users (users.py).
+Username = Annotated[
+    str,
+    BeforeValidator(strip_spaces),
+    Field(min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.]+$"),
+    AfterValidator(str.lower),
+]
+Email = Annotated[EmailStr, AfterValidator(str.lower)]
+FullName = Annotated[
+    str, BeforeValidator(strip_spaces), Field(min_length=1, max_length=100)
+]
+Password = Annotated[str, Field(min_length=8), AfterValidator(fits_bcrypt)]
+
+
 class RegisterRequest(BaseModel):
     """Self sign-up. Accounts created this way are always students."""
 
-    username: str = Field(
-        min_length=3, max_length=50, pattern=r"^[A-Za-z0-9_.]+$"
-    )
-    email: EmailStr
-    full_name: str = Field(min_length=1, max_length=100)
-    password: str = Field(min_length=8)
-
-    @field_validator("username", "full_name", mode="before")
-    @classmethod
-    def strip_spaces(cls, value: object) -> object:
-        return value.strip() if isinstance(value, str) else value
-
-    @field_validator("username", "email")
-    @classmethod
-    def lowercase(cls, value: str) -> str:
-        return value.lower()
-
-    @field_validator("password")
-    @classmethod
-    def fits_bcrypt(cls, value: str) -> str:
-        if len(value.encode()) > 72:
-            raise ValueError("Password must be at most 72 bytes long")
-        return value
+    username: Username
+    email: Email
+    full_name: FullName
+    password: Password
 
 
 def user_to_dict(user: User | CurrentUser) -> dict:

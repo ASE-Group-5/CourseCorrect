@@ -26,6 +26,7 @@ LOGIN = st.Page("views/login.py", title="Log in", default=True)
 REGISTER = st.Page("views/register.py", title="Create account")
 SCHEDULES = st.Page("views/schedules.py", title="Schedules")
 REQUESTS = st.Page("views/modification_requests.py", title="Requests")
+USERS = st.Page("views/user_management.py", title="Users", url_path="users")
 LOG_OUT = st.Page(log_out, title="Log out", url_path="logout")
 
 
@@ -42,7 +43,13 @@ def dashboard(role: str) -> st.Page:
 PAGES_BY_ROLE = {
     "student": [dashboard("student"), SCHEDULES, LOG_OUT],
     "instructor": [dashboard("instructor"), SCHEDULES, REQUESTS, LOG_OUT],
-    "coordinator": [dashboard("coordinator"), SCHEDULES, REQUESTS, LOG_OUT],
+    "coordinator": [
+        dashboard("coordinator"),
+        SCHEDULES,
+        REQUESTS,
+        USERS,
+        LOG_OUT,
+    ],
 }
 LOGGED_OUT_PAGES = [LOGIN, REGISTER]
 
