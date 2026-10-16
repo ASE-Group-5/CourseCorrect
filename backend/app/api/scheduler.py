@@ -6,10 +6,14 @@ from dataclasses import dataclass
 from itertools import accumulate
 from typing import Callable
 
+from fastapi import APIRouter
+
 HARD_PENALTY = 5.0
 SPREAD_GAP_HOURS = 4
 
 _PREFERENCE_BONUS = {"preferred": 0.5, "qualified": 0.2}
+
+router = APIRouter(tags=["scheduler"])
 
 
 class InfeasibleError(ValueError):

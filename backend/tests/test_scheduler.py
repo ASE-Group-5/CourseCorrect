@@ -4,7 +4,7 @@ from types import SimpleNamespace as NS
 
 import pytest
 
-from app.scheduler import (
+from app.api.scheduler import (
     HARD_PENALTY,
     InfeasibleError,
     ScheduleResult,
