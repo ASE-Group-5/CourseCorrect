@@ -3,7 +3,7 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-import app.modifications as mods
+import app.api.modifications as mods
 from app.models import ModificationRequest
 
 COORD_A, COORD_B, PRAMAN, MWEBB, LINDQVIST, ORPHAN = 1, 2, 3, 4, 5, 6

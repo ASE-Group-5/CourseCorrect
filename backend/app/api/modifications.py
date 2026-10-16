@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 
+from fastapi import APIRouter
 from sqlalchemy import text
 
 from app.db.session import SessionLocal
@@ -8,6 +9,8 @@ from app.models import ModificationRequest
 MODIFICATION_TYPES = ("slot", "location", "instructor")
 
 REQUESTABLE_TYPES = ("slot", "location")
+
+router = APIRouter(tags=["modifications"])
 
 
 def _value(x):
