@@ -8,7 +8,8 @@ Commands:
     migrate    Apply database migrations (alembic upgrade head).
     prepare    setup + migrate (what the Run/Debug button runs first).
     backend    Run the FastAPI server with auto-reload on port 8000.
-    frontend   Run the Streamlit app on port 8501.
+    frontend   Run the Streamlit app on port 8501 and open it in the browser
+               (set COURSECORRECT_NO_BROWSER=1 to skip opening it).
     test       Run the backend pytest suite.
     revision   Create a new migration: dev.py revision "message".
     format     Format and lint-fix the whole project with ruff.
@@ -16,9 +17,13 @@ Commands:
 
 import hashlib
 import os
+import secrets
 import shutil
 import subprocess
 import sys
+import time
+import urllib.request
+import webbrowser
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -32,6 +37,7 @@ REQUIREMENT_FILES = [
     ROOT / "requirements-dev.txt",
 ]
 MIN_PYTHON = (3, 10)
+FRONTEND_URL = "http://localhost:8501"
 
 
 def venv_python() -> Path:
@@ -132,6 +138,52 @@ def cmd_setup() -> None:
             shutil.copy(example, target)
             info(f"Created {target.relative_to(ROOT)} from .env.example")
 
+    add_auth_settings()
+    remove_stale_pages_folder()
+
+
+def add_auth_settings() -> None:
+    env_file = BACKEND / ".env"
+    if not env_file.exists():
+        return
+    defaults = {
+        "JWT_SECRET_KEY": secrets.token_urlsafe(48),
+        "JWT_ALGORITHM": "HS256",
+        "ACCESS_TOKEN_EXPIRE_MINUTES": "10",
+    }
+    existing = load_env_file(env_file)
+    missing = {
+        key: value for key, value in defaults.items() if key not in existing
+    }
+    if not missing:
+        return
+    text = env_file.read_text(encoding="utf-8")
+    if text and not text.endswith("\n"):
+        text += "\n"
+    text += "\n# Login tokens (stories 1-2). Keep the secret private.\n"
+    text += "".join(f"{key}={value}\n" for key, value in missing.items())
+    env_file.write_text(text, encoding="utf-8")
+    info(f"Added {', '.join(missing)} to backend/.env")
+
+
+def remove_stale_pages_folder() -> None:
+    """Deletes a leftover frontend/pages folder (pages now live in views/).
+
+    If a `pages` folder exists at all, Streamlit serves its scripts directly
+    and skips the login gate in app.py. Git leaves the folder behind when it
+    still holds ignored files such as __pycache__.
+    """
+    pages = FRONTEND / "pages"
+    if not pages.exists():
+        return
+    if any(pages.glob("*.py")):
+        fail(
+            "frontend/pages/ contains .py files. Move them to frontend/views/ "
+            "and register them in frontend/app.py, then delete frontend/pages/."
+        )
+    shutil.rmtree(pages)
+    info("Removed leftover frontend/pages/ folder (pages live in views/).")
+
 
 def database_ready() -> bool:
     url = load_env_file(BACKEND / ".env").get("DATABASE_URL", "")
@@ -171,6 +223,7 @@ def cmd_prepare() -> None:
 
 def cmd_backend() -> None:
     python = require_venv()
+    add_auth_settings()
     run_foreground(
         [
             str(python),
@@ -185,9 +238,31 @@ def cmd_backend() -> None:
     )
 
 
+def cmd_open_browser(url: str, timeout_seconds: float = 90) -> None:
+    """Waits until Streamlit answers at `url`, then opens it in the browser."""
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(f"{url}/_stcore/health", timeout=2):
+                webbrowser.open(url)
+                return
+        except OSError:
+            time.sleep(0.5)
+
+
 def cmd_frontend() -> None:
     python = require_venv()
+    remove_stale_pages_folder()
     env = load_env_file(FRONTEND / ".env")
+    # Streamlit runs headless (see .streamlit/config.toml), so a separate
+    # process opens the browser once the server is up. The F5 launch configs
+    # open it themselves and do not go through this command.
+    if not os.environ.get("COURSECORRECT_NO_BROWSER"):
+        subprocess.Popen(
+            [sys.executable, __file__, "open-browser", FRONTEND_URL],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
     run_foreground(
         [
             str(python),
@@ -205,6 +280,7 @@ def cmd_frontend() -> None:
 
 def cmd_test() -> None:
     python = require_venv()
+    add_auth_settings()
     sys.exit(run([str(python), "-m", "pytest"], BACKEND))
 
 
@@ -252,6 +328,8 @@ def main() -> None:
     }
     if command == "revision":
         cmd_revision(" ".join(sys.argv[2:]))
+    elif command == "open-browser":  # Internal: started by cmd_frontend.
+        cmd_open_browser(sys.argv[2] if len(sys.argv) > 2 else FRONTEND_URL)
     elif command in commands:
         commands[command]()
     else:

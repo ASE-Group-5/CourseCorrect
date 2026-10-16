@@ -4,7 +4,7 @@ Tests run against an in-memory SQLite database so they never touch the real
 (Neon) database and need no network access.
 """
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,9 +12,11 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.core.security import create_access_token
 from app.db.base import Base
 from app.db.session import get_db
 from app.main import app
+from app.models.user import User
 
 
 @pytest.fixture()
@@ -45,3 +47,22 @@ def client(db_session: Session) -> Iterator[TestClient]:
     with TestClient(app) as test_client:
         yield test_client
     app.dependency_overrides.clear()
+
+
+@pytest.fixture()
+def auth_headers() -> Callable[[User], dict[str, str]]:
+    """Return a function that builds login headers for a saved user."""
+
+    def _auth_headers(user: User) -> dict[str, str]:
+        token = create_access_token(
+            {
+                "id": user.id,
+                "username": user.username,
+                "email": user.email,
+                "full_name": user.full_name,
+                "role": user.role.value,
+            }
+        )
+        return {"Authorization": f"Bearer {token}"}
+
+    return _auth_headers
