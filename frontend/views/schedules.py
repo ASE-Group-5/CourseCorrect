@@ -15,6 +15,7 @@ st.title("Schedules")
 
 user = auth.current_user()
 is_coordinator = user["role"] == "coordinator"
+is_instructor = user["role"] == "instructor"
 
 
 def build_schedule_pdf(classes: list[dict]) -> bytes:
@@ -67,6 +68,55 @@ if view == "Instructor":
                     st.table(classes)
                 else:
                     st.info("No scheduled classes found.")
+
+    if is_instructor and st.button("Push to Calendar"):
+        with ui.loading():
+            try:
+                result = api_client.request(
+                    "POST", "/calendar/push", token=auth.get_token()
+                )
+            except api_client.BackendError as exc:
+                st.error(exc.detail)
+            else:
+                events_created = result.get("events_created")
+                if events_created is None:
+                    st.error("Calendar synchronization returned an invalid response.")
+                else:
+                    st.success(
+                        f"Created {events_created} calendar event(s)."
+                    )
+
+    if is_instructor:
+        try:
+            calendar_status = api_client.request(
+                "GET", "/calendar/status", token=auth.get_token()
+            )
+        except api_client.BackendError as exc:
+            st.error(exc.detail)
+        else:
+            if calendar_status.get("demo_dates_enabled"):
+                st.info("Demo Dates enabled: Spring 2027, Mondays/Wednesdays")
+            if calendar_status.get("connected"):
+                st.success("Google Calendar connected.")
+            else:
+                if calendar_status.get("reconnect_required"):
+                    st.warning("Google Calendar authorization is no longer valid.")
+                    connection_action = "Reconnect Google Calendar"
+                else:
+                    st.info("Google Calendar is not connected.")
+                    connection_action = "Connect Google Calendar"
+                if st.button(connection_action):
+                    with ui.loading():
+                        try:
+                            auth_url = api_client.request(
+                                "GET",
+                                "/calendar/oauth/connect",
+                                token=auth.get_token(),
+                            )["authorization_url"]
+                        except api_client.BackendError as exc:
+                            st.error(exc.detail)
+                        else:
+                            st.link_button("Continue with Google", auth_url)
 
 else:
     st.subheader("View student schedule")

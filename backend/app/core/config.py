@@ -31,6 +31,13 @@ class Settings(BaseSettings):
     jwt_algorithm: str
     access_token_expire_minutes: int = Field(gt=0)
 
+    # Google Calendar integration. These remain unset until OAuth is configured.
+    google_client_id: str | None = None
+    google_client_secret: str | None = None
+    google_redirect_uri: str = "http://localhost:8000/calendar/oauth/callback"
+    calendar_token_encryption_key: str | None = None
+    calendar_demo_mode: bool = False
+
     @property
     def sqlalchemy_url(self) -> str:
         """URL used by the running application (pooled)."""
