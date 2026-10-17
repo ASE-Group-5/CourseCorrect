@@ -1,4 +1,4 @@
-"""Schedule generation and modification-request endpoints."""
+"""Schedule generation, publishing and modification-request endpoints."""
 
 from datetime import datetime, timezone
 from typing import Literal
@@ -12,7 +12,8 @@ from app.api import modifications as mods
 from app.api.deps import CurrentUser, require_role
 from app.api.scheduler import InfeasibleError, generate_schedule
 from app.db.session import get_db
-from app.models.common import Role, ScheduleStatus
+from app.models.common import RequestStatus, Role, ScheduleStatus
+from app.models.request import ModificationRequest
 from app.models.schedule import Schedule, ScheduleEntry
 
 router = APIRouter(tags=["scheduling"])
@@ -28,7 +29,7 @@ def _records(messages: list[str]) -> list[dict[str, str]]:
 
 
 # --------------------------------------------------------------------------- #
-# Generate (instructor)
+# Generate (coordinator)
 # --------------------------------------------------------------------------- #
 class GenerateIn(BaseModel):
     semester_id: int | None = None  # defaults to the active semester
@@ -38,17 +39,10 @@ class GenerateIn(BaseModel):
 def generate(
     body: GenerateIn,
     db: Session = Depends(get_db),
-    user: CurrentUser = Depends(require_role(Role.INSTRUCTOR)),
+    user: CurrentUser = Depends(require_role(Role.COORDINATOR)),
 ) -> dict:
     """Run the scheduler for a semester and save the result as a draft."""
-    semester_id = (
-        body.semester_id
-        or db.execute(
-            text("SELECT id FROM semesters WHERE is_active = :t"), {"t": True}
-        ).scalar()
-    )
-    if semester_id is None:
-        raise HTTPException(status_code=404, detail="No active semester")
+    semester_id = body.semester_id or _active_semester_id(db)
 
     def q(sql, **p):
         return db.execute(text(sql), p).all()
@@ -107,6 +101,136 @@ def generate(
         "generations_run": result.generations_run,
         "hard_violations": result.report["hard_violations"],
         "soft_violations": result.report["soft_violations"],
+    }
+
+
+# --------------------------------------------------------------------------- #
+# List and publish (coordinator)
+# --------------------------------------------------------------------------- #
+def _active_semester_id(db: Session) -> int:
+    semester_id = db.execute(
+        text("SELECT id FROM semesters WHERE is_active = :t"), {"t": True}
+    ).scalar()
+    if semester_id is None:
+        raise HTTPException(status_code=404, detail="No active semester")
+    return semester_id
+
+
+def _conflicts(schedule: Schedule) -> int:
+    return len((schedule.report or {}).get("hard_violations", []))
+
+
+@router.get("/schedules")
+def list_schedules(
+    semester_id: int | None = None,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_role(Role.COORDINATOR)),
+) -> list[dict]:
+    """The semester's schedules (default: the active semester), newest first."""
+    schedules = (
+        db.query(Schedule)
+        .filter(
+            Schedule.semester_id == (semester_id or _active_semester_id(db))
+        )
+        .order_by(Schedule.created_at.desc(), Schedule.id.desc())
+        .all()
+    )
+    return [
+        {
+            "id": s.id,
+            "status": s.status.value,
+            "fitness": s.fitness,
+            "conflicts": _conflicts(s),
+            "classes": len(s.entries),
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "created_by": s.created_by.full_name if s.created_by else None,
+        }
+        for s in schedules
+    ]
+
+
+@router.get("/schedules/{schedule_id}/entries")
+def schedule_entries(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_role(Role.COORDINATOR)),
+) -> list[dict]:
+    """Every class in a schedule, ordered by time then course."""
+    schedule = db.get(Schedule, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    entries = sorted(
+        schedule.entries,
+        key=lambda e: (e.time_slot.hour, e.course.code),
+    )
+    return [
+        {
+            "course_code": e.course.code,
+            "course_name": e.course.name,
+            "time_slot_label": e.time_slot.label,
+            "room_name": e.room.name,
+            "room_building": e.room.building,
+            "instructor_name": e.instructor.full_name,
+        }
+        for e in entries
+    ]
+
+
+@router.post("/schedules/{schedule_id}/publish")
+def publish(
+    schedule_id: int,
+    db: Session = Depends(get_db),
+    user: CurrentUser = Depends(require_role(Role.COORDINATOR)),
+) -> dict:
+    """Publish a draft, returning the semester's published schedule to draft.
+
+    Pending change requests on the replaced schedule are declined, since they
+    would otherwise edit a schedule nobody sees.
+    """
+    schedule = db.get(Schedule, schedule_id)
+    if schedule is None:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    if schedule.status == ScheduleStatus.PUBLISHED:
+        return {"schedule_id": schedule.id, "unpublished": [], "declined": 0}
+    if _conflicts(schedule):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Schedule #{schedule.id} has {_conflicts(schedule)} "
+            "conflict(s) and cannot be published",
+        )
+
+    previous = (
+        db.query(Schedule)
+        .filter(
+            Schedule.semester_id == schedule.semester_id,
+            Schedule.status == ScheduleStatus.PUBLISHED,
+        )
+        .all()
+    )
+    previous_ids = [s.id for s in previous]
+    stale_requests = (
+        db.query(ModificationRequest)
+        .join(ScheduleEntry, ModificationRequest.entry)
+        .filter(
+            ScheduleEntry.schedule_id.in_(previous_ids),
+            ModificationRequest.status == RequestStatus.PENDING,
+        )
+        .all()
+    )
+    now = datetime.now(timezone.utc)
+    for request in stale_requests:
+        request.status = RequestStatus.DECLINED
+        request.reviewed_by_id = user.id
+        request.reviewer_comment = f"Schedule #{schedule.id} replaced the schedule this request was for."
+        request.resolved_at = now
+    for old in previous:
+        old.status = ScheduleStatus.DRAFT
+    schedule.status = ScheduleStatus.PUBLISHED
+    db.commit()
+    return {
+        "schedule_id": schedule.id,
+        "unpublished": previous_ids,
+        "declined": len(stale_requests),
     }
 
 

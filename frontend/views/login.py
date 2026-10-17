@@ -5,7 +5,6 @@ import streamlit as st
 import api_client
 import auth
 import ui
-from config import get_backend_url
 
 ui.narrow_page()
 
@@ -38,15 +37,3 @@ if submitted:
             st.rerun()
 
 st.page_link("views/register.py", label="No account? Create one")
-
-with st.expander("System status"):
-    st.caption(f"Backend: {get_backend_url()}")
-    if st.button("Check backend connection"):
-        with ui.loading():
-            try:
-                api_client.get_health()
-                st.success("Backend is reachable.")
-                api_client.get_db_health()
-                st.success("Database is connected.")
-            except api_client.BackendError as exc:
-                st.error(str(exc))

@@ -50,11 +50,11 @@ PAGES_BY_ROLE = {
         SCHEDULES,
         REQUESTS,
         LOG_OUT,
-        GENERATE,
     ],
     "coordinator": [
         dashboard("coordinator"),
         SCHEDULES,
+        GENERATE,
         REQUESTS,
         USERS,
         LOG_OUT,
