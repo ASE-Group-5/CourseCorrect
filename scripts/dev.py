@@ -258,9 +258,6 @@ def cmd_frontend() -> None:
     python = require_venv()
     remove_stale_pages_folder()
     env = load_env_file(FRONTEND / ".env")
-    # Streamlit runs headless (see .streamlit/config.toml), so a separate
-    # process opens the browser once the server is up. The F5 launch configs
-    # open it themselves and do not go through this command.
     if not os.environ.get("COURSECORRECT_NO_BROWSER"):
         subprocess.Popen(
             [sys.executable, __file__, "open-browser", FRONTEND_URL],

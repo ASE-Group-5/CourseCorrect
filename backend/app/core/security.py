@@ -21,16 +21,11 @@ def verify_password(password: str, password_hash: str) -> bool:
         return False
 
 
-# User fields carried inside every token, so requests need no database lookup.
-# The signature stops anyone changing them; they refresh at the next login.
 TOKEN_USER_FIELDS = ("username", "email", "full_name", "role")
 
 
 def create_access_token(user: dict) -> str:
-    """Return a signed token carrying the user until it expires.
-
-    `user` holds "id" plus every field in TOKEN_USER_FIELDS.
-    """
+    """Return a signed token carrying the user until it expires."""
     settings = get_settings()
     expires = datetime.now(timezone.utc) + timedelta(
         minutes=settings.access_token_expire_minutes

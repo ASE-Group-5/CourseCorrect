@@ -1,9 +1,10 @@
-"""Schedule generation page (instructors)."""
+"""Schedule generation page (coordinators)."""
 
 import streamlit as st
 
 import api_client
 import auth
+import schedule_admin
 import ui
 
 st.title("Generate schedule")
@@ -47,3 +48,7 @@ if result:
             st.markdown("\n".join(f"- {v}" for v in unmet))
         else:
             st.write("None.")
+
+
+st.subheader("Schedules this semester")
+schedule_admin.semester_schedules()

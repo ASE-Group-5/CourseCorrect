@@ -22,11 +22,6 @@ def ts(month, day, hour=9):
     return datetime(2026, month, day, hour, 0, tzinfo=timezone.utc)
 
 
-# --------------------------------------------------------------------------
-# Lightweight table definitions. Migrations must not import the app's models,
-# because the models change over time but a migration must not.
-# --------------------------------------------------------------------------
-# Columns that need an explicit type so values are converted correctly.
 _TYPES = {
     "report": sa.JSON(),
     "created_at": sa.DateTime(timezone=True),
@@ -125,9 +120,7 @@ SEQUENCE_TABLES = [
     "calendar_links",
 ]
 
-# --------------------------------------------------------------------------
 # People (ids: coordinators 1-2, instructors 3-8, students 9-20)
-# --------------------------------------------------------------------------
 COORDINATORS = [
     (1, "amorgan", "Dr. Ada Morgan"),
     (2, "dcho", "Prof. Daniel Cho"),
@@ -159,9 +152,6 @@ STUDENTS = [  # (id, username, full name)
     (9 + i, f"student{i + 1:02d}", name) for i, name in enumerate(STUDENT_NAMES)
 ]
 
-# --------------------------------------------------------------------------
-# Rooms and time slots
-# --------------------------------------------------------------------------
 ROOMS = [  # (id, name, building, zone, capacity)
     (1, "Science 101", "Science", "Main", 120),
     (2, "Science 210", "Science", "Main", 60),
@@ -180,9 +170,7 @@ SLOTS = [  # (id, hour, label)
     (7, 15, "3PM"),
 ]
 
-# --------------------------------------------------------------------------
 # Semester and courses (id, code, title, expected enrollment)
-# --------------------------------------------------------------------------
 SEMESTER_ID = 1
 COURSES = [
     (1, "CS101A", "Intro to Programming (Section A)", 40),
@@ -232,10 +220,8 @@ ENROLLMENT = {
     12: ["CS201", "CS310", "CS350"],
 }
 
-# --------------------------------------------------------------------------
 # Schedules. Entry: (course code, instructor username, room id, slot id,
 # fitness). Schedule 1 is an earlier draft; schedule 2 is the published one.
-# --------------------------------------------------------------------------
 DRAFT_ENTRIES = [
     ("CS101A", "praman", 4, 1, 2.1),
     ("CS101B", "erossi", 4, 5, 1.6),
@@ -265,9 +251,6 @@ PUBLISHED_ENTRY_ID = {
     code: 8 + i for i, (code, *_rest) in enumerate(PUBLISHED_ENTRIES, start=1)
 }
 
-# --------------------------------------------------------------------------
-# Modification requests on the published schedule.
-# --------------------------------------------------------------------------
 REQUESTS = [
     {
         "id": 1,
