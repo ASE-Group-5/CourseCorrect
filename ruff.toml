@@ -1,5 +1,3 @@
-# Formatter/linter config aligned with the Google Python Style Guide
-# (4-space indents, 80-column lines, sorted imports).
 line-length = 80
 indent-width = 4
 target-version = "py310"

@@ -1,8 +1,4 @@
-"""Schedule viewing page.
-
-Students and instructors see their own schedule; coordinators can look up
-anyone's.
-"""
+"""Schedule viewing page."""
 
 import streamlit as st
 from fpdf import FPDF

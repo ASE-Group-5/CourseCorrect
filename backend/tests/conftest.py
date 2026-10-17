@@ -1,8 +1,4 @@
-"""Shared pytest fixtures.
-
-Tests run against an in-memory SQLite database so they never touch the real
-(Neon) database and need no network access.
-"""
+"""Shared pytest fixtures."""
 
 from collections.abc import Callable, Iterator
 

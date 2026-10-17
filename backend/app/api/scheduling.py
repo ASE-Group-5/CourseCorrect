@@ -28,9 +28,6 @@ def _records(messages: list[str]) -> list[dict[str, str]]:
     return [{"message": m} for m in messages]
 
 
-# --------------------------------------------------------------------------- #
-# Generate (coordinator)
-# --------------------------------------------------------------------------- #
 class GenerateIn(BaseModel):
     semester_id: int | None = None  # defaults to the active semester
 
@@ -104,9 +101,6 @@ def generate(
     }
 
 
-# --------------------------------------------------------------------------- #
-# List and publish (coordinator)
-# --------------------------------------------------------------------------- #
 def _active_semester_id(db: Session) -> int:
     semester_id = db.execute(
         text("SELECT id FROM semesters WHERE is_active = :t"), {"t": True}
@@ -182,11 +176,7 @@ def publish(
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(require_role(Role.COORDINATOR)),
 ) -> dict:
-    """Publish a draft, returning the semester's published schedule to draft.
-
-    Pending change requests on the replaced schedule are declined, since they
-    would otherwise edit a schedule nobody sees.
-    """
+    """Publish a draft, returning the semester's published schedule to draft."""
     schedule = db.get(Schedule, schedule_id)
     if schedule is None:
         raise HTTPException(status_code=404, detail="Schedule not found")
@@ -234,9 +224,6 @@ def publish(
     }
 
 
-# --------------------------------------------------------------------------- #
-# Modification requests
-# --------------------------------------------------------------------------- #
 class RequestIn(BaseModel):
     entry_id: int
     modification_type: Literal["slot", "location"]
