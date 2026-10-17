@@ -15,6 +15,7 @@ Commands:
     format     Format and lint-fix the whole project with ruff.
 """
 
+import base64
 import hashlib
 import os
 import secrets
@@ -150,6 +151,9 @@ def add_auth_settings() -> None:
         "JWT_SECRET_KEY": secrets.token_urlsafe(48),
         "JWT_ALGORITHM": "HS256",
         "ACCESS_TOKEN_EXPIRE_MINUTES": "10",
+        "CALENDAR_TOKEN_ENCRYPTION_KEY": base64.urlsafe_b64encode(
+            secrets.token_bytes(32)
+        ).decode(),
     }
     existing = load_env_file(env_file)
     missing = {

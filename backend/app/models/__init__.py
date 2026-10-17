@@ -1,5 +1,9 @@
 from app.db.base import Base
-from app.models.calendar import CalendarLink
+from app.models.calendar import (
+    CalendarEventSync,
+    CalendarLink,
+    CalendarOAuthState,
+)
 from app.models.common import (
     CoursePreference,
     PairRuleType,
@@ -22,6 +26,8 @@ from app.models.user import User
 __all__ = [
     "Base",
     "CalendarLink",
+    "CalendarEventSync",
+    "CalendarOAuthState",
     "Course",
     "CourseInstructor",
     "CoursePairRule",

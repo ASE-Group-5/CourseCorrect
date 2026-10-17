@@ -27,6 +27,7 @@ PUBLIC_ROUTES = {
     ("GET", "/health/db"),
     ("POST", "/auth/login"),
     ("POST", "/auth/register"),
+    ("GET", "/calendar/oauth/callback"),
 }
 
 
