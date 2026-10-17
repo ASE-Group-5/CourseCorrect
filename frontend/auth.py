@@ -1,0 +1,147 @@
+"""Who is logged in, kept in the Streamlit session (stories 1-2).
+
+The login token is also saved in a browser cookie so a page refresh keeps the
+user logged in. Logins expire with their token (ACCESS_TOKEN_EXPIRE_MINUTES on
+the backend): `check_session` runs on every page change or click, and logs the
+user out once the token has expired, without calling the backend.
+"""
+
+import base64
+import json
+import re
+import time
+
+import streamlit as st
+
+import api_client
+import ui
+
+TOKEN_KEY = "auth_token"
+USER_KEY = "auth_user"
+EXPIRES_AT_KEY = "auth_expires_at"
+GO_HOME_KEY = "auth_go_home"
+NOTICE_KEY = "auth_notice"
+COOKIE_ACTION_KEY = "auth_cookie_action"
+COOKIE_CHECKED_KEY = "auth_cookie_checked"
+
+COOKIE_NAME = "coursecorrect_token"
+TOKEN_PATTERN = re.compile(r"[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+")
+
+
+def token_expires_at(token: str) -> float:
+    """Return when the token expires (Unix time), or 0 if it is unreadable.
+
+    This only reads the token for timing. The backend still checks its
+    signature on every request.
+    """
+    try:
+        payload = token.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(payload + "=="))
+        return float(claims["exp"])
+    except (IndexError, KeyError, TypeError, ValueError):
+        return 0
+
+
+def log_in(token: str, user: dict) -> None:
+    """Remember the user and send them to their dashboard on the next run."""
+    remember(token, user)
+    st.session_state[GO_HOME_KEY] = True
+    st.session_state[COOKIE_ACTION_KEY] = "set"
+
+
+def remember(token: str, user: dict) -> None:
+    st.session_state[TOKEN_KEY] = token
+    st.session_state[USER_KEY] = user
+    st.session_state[EXPIRES_AT_KEY] = token_expires_at(token)
+
+
+def log_out(notice: str | None = None) -> None:
+    """Forget the user and send them to the login page on the next run."""
+    for key in (TOKEN_KEY, USER_KEY, EXPIRES_AT_KEY):
+        st.session_state.pop(key, None)
+    st.session_state[GO_HOME_KEY] = True
+    st.session_state[COOKIE_ACTION_KEY] = "clear"
+    if notice:
+        st.session_state[NOTICE_KEY] = notice
+
+
+def current_user() -> dict | None:
+    """Return the logged-in user as sent by the backend, or None."""
+    return st.session_state.get(USER_KEY)
+
+
+def get_token() -> str | None:
+    return st.session_state.get(TOKEN_KEY)
+
+
+def should_go_home() -> bool:
+    """True once after logging in or out (the visible pages just changed)."""
+    return bool(st.session_state.pop(GO_HOME_KEY, False))
+
+
+def pop_notice() -> str | None:
+    """Return a one-time message for the login page (e.g. session expired)."""
+    return st.session_state.pop(NOTICE_KEY, None)
+
+
+def check_session() -> None:
+    """Log the user out if their login has expired. Runs on every rerun."""
+    expires_at = st.session_state.get(EXPIRES_AT_KEY)
+    if current_user() and (expires_at is None or time.time() >= expires_at):
+        log_out("Your session expired. Please log in again.")
+
+
+def restore_from_cookie() -> None:
+    """Log back in from the saved cookie, once per browser session.
+
+    Runs when a page is (re)loaded and nobody is logged in yet. The backend
+    checks the token, so an edited or expired cookie is simply removed.
+    """
+    if st.session_state.get(COOKIE_CHECKED_KEY) or current_user():
+        return
+    st.session_state[COOKIE_CHECKED_KEY] = True
+
+    token = st.context.cookies.get(COOKIE_NAME)
+    if not token:
+        return
+    if token_expires_at(token) <= time.time():
+        st.session_state[COOKIE_ACTION_KEY] = "clear"
+        return
+
+    with ui.loading():
+        try:
+            user = api_client.request("GET", "/auth/me", token=token)
+        except api_client.BackendError as exc:
+            if exc.status_code == 401:
+                st.session_state[COOKIE_ACTION_KEY] = "clear"
+            else:  # Backend asleep or down: keep the cookie and try next time.
+                st.session_state[NOTICE_KEY] = (
+                    "Could not reach the server to restore your login."
+                )
+            return
+    remember(token, user)
+
+
+def sync_cookie() -> None:
+    """Write or delete the login cookie if a login or logout asked for it.
+
+    Call this on a run that displays a page: a run that ends in st.rerun or
+    st.switch_page may never reach the browser.
+    """
+    action = st.session_state.pop(COOKIE_ACTION_KEY, None)
+    token = get_token()
+    if action == "set" and token and TOKEN_PATTERN.fullmatch(token):
+        max_age = int(st.session_state[EXPIRES_AT_KEY] - time.time())
+        cookie = f"{COOKIE_NAME}={token}; Max-Age={max(max_age, 0)}"
+    elif action == "clear":
+        cookie = f"{COOKIE_NAME}=; Max-Age=0"
+    else:
+        return
+    # The cc-cookie-sync class lets ui.py hide this block so it leaves no gap.
+    st.html(
+        '<div class="cc-cookie-sync"><script>'
+        f"document.cookie = {json.dumps(cookie + '; Path=/; SameSite=Strict')}"
+        ' + (location.protocol === "https:" ? "; Secure" : "");'
+        "</script></div>",
+        unsafe_allow_javascript=True,
+    )

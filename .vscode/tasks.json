@@ -1,0 +1,123 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Setup",
+      "detail": "Create .venv, install dependencies, create .env files",
+      "type": "process",
+      "command": "python3",
+      "windows": { "command": "python" },
+      "args": ["scripts/dev.py", "setup"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "DB: Apply migrations",
+      "detail": "alembic upgrade head",
+      "type": "process",
+      "command": "python3",
+      "windows": { "command": "python" },
+      "args": ["scripts/dev.py", "migrate"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "DB: New migration",
+      "detail": "alembic revision --autogenerate (prompts for a message)",
+      "type": "process",
+      "command": "python3",
+      "windows": { "command": "python" },
+      "args": ["scripts/dev.py", "revision", "${input:migrationMessage}"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Prepare",
+      "detail": "Setup + apply migrations (runs automatically before debugging)",
+      "type": "process",
+      "command": "python3",
+      "windows": { "command": "python" },
+      "args": ["scripts/dev.py", "prepare"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Run Backend",
+      "detail": "FastAPI on http://localhost:8000 (auto-reload)",
+      "type": "process",
+      "command": "python3",
+      "windows": { "command": "python" },
+      "args": ["scripts/dev.py", "backend"],
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Will watch for changes",
+          "endsPattern": "Application startup complete"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "servers" }
+    },
+    {
+      "label": "Run Frontend",
+      "detail": "Streamlit on http://localhost:8501",
+      "type": "process",
+      "command": "python3",
+      "windows": { "command": "python" },
+      "args": ["scripts/dev.py", "frontend"],
+      "isBackground": true,
+      "problemMatcher": {
+        "pattern": { "regexp": "^$" },
+        "background": {
+          "activeOnStart": true,
+          "beginsPattern": "Starting",
+          "endsPattern": "Local URL"
+        }
+      },
+      "presentation": { "reveal": "always", "panel": "dedicated", "group": "servers" }
+    },
+    {
+      "label": "Run Servers",
+      "detail": "Backend + frontend side by side",
+      "dependsOn": ["Run Backend", "Run Frontend"],
+      "problemMatcher": []
+    },
+    {
+      "label": "Start Everything",
+      "detail": "Setup, migrate, then run backend + frontend (Ctrl+Shift+B)",
+      "dependsOn": ["Prepare", "Run Servers"],
+      "dependsOrder": "sequence",
+      "problemMatcher": [],
+      "group": { "kind": "build", "isDefault": true }
+    },
+    {
+      "label": "Test: Run pytest",
+      "detail": "Backend test suite",
+      "type": "process",
+      "command": "python3",
+      "windows": { "command": "python" },
+      "args": ["scripts/dev.py", "test"],
+      "problemMatcher": [],
+      "group": { "kind": "test", "isDefault": true },
+      "presentation": { "reveal": "always", "panel": "shared" }
+    },
+    {
+      "label": "Format: Whole project",
+      "detail": "ruff check --fix + ruff format",
+      "type": "process",
+      "command": "python3",
+      "windows": { "command": "python" },
+      "args": ["scripts/dev.py", "format"],
+      "problemMatcher": [],
+      "presentation": { "reveal": "always", "panel": "shared" }
+    }
+  ],
+  "inputs": [
+    {
+      "id": "migrationMessage",
+      "type": "promptString",
+      "description": "Short migration description (e.g. add users table)"
+    }
+  ]
+}
