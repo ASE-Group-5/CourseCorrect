@@ -26,11 +26,15 @@ from app.services.calendar_security import (
     ("error", "category"),
     [
         (
-            type("InvalidClientError", (Exception,), {"error": "invalid_client"})(),
+            type(
+                "InvalidClientError", (Exception,), {"error": "invalid_client"}
+            )(),
             "invalid_client_credentials",
         ),
         (
-            type("InvalidGrantError", (Exception,), {"error": "invalid_grant"})(),
+            type(
+                "InvalidGrantError", (Exception,), {"error": "invalid_grant"}
+            )(),
             "invalid_or_expired_authorization_code",
         ),
         (
@@ -71,7 +75,9 @@ def instructor() -> User:
     )
 
 
-def test_oauth_state_rejects_unknown_or_replayed_state(client: TestClient) -> None:
+def test_oauth_state_rejects_unknown_or_replayed_state(
+    client: TestClient,
+) -> None:
     response = client.get("/calendar/oauth/callback?state=unknown&code=code")
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid or expired OAuth state"
@@ -160,7 +166,7 @@ def test_successful_reconnection_replaces_existing_encrypted_token(
     monkeypatch.setattr(
         calendar_oauth,
         "_flow",
-        lambda state=None: (captured.update(state=state) or FakeFlow()),
+        lambda state=None: captured.update(state=state) or FakeFlow(),
     )
     assert client.get("/calendar/oauth/connect").status_code == 200
     callback = client.get(
@@ -170,7 +176,10 @@ def test_successful_reconnection_replaces_existing_encrypted_token(
     assert callback.status_code == 200
     db_session.refresh(existing_link)
     assert db_session.query(CalendarLink).count() == 1
-    assert decrypt_refresh_token(existing_link.refresh_token) == "new-refresh-token"
+    assert (
+        decrypt_refresh_token(existing_link.refresh_token)
+        == "new-refresh-token"
+    )
 
 
 def test_failed_reconnection_preserves_existing_link(
@@ -200,7 +209,7 @@ def test_failed_reconnection_preserves_existing_link(
     monkeypatch.setattr(
         calendar_oauth,
         "_flow",
-        lambda state=None: (captured.update(state=state) or FailedFlow()),
+        lambda state=None: captured.update(state=state) or FailedFlow(),
     )
     assert client.get("/calendar/oauth/connect").status_code == 200
     response = client.get(
@@ -210,10 +219,15 @@ def test_failed_reconnection_preserves_existing_link(
     assert response.status_code == 400
     db_session.refresh(existing_link)
     assert db_session.query(CalendarLink).count() == 1
-    assert decrypt_refresh_token(existing_link.refresh_token) == "old-refresh-token"
+    assert (
+        decrypt_refresh_token(existing_link.refresh_token)
+        == "old-refresh-token"
+    )
 
 
-def test_only_instructors_can_start_oauth(client: TestClient, db_session) -> None:
+def test_only_instructors_can_start_oauth(
+    client: TestClient, db_session
+) -> None:
     user = instructor()
     user.role = Role.STUDENT
     db_session.add(user)
@@ -261,7 +275,14 @@ def test_duplicate_prevention_and_partial_failure(db_session) -> None:
         push_events(
             db_session,
             link,
-            [first, {**first, "_coursecorrect_event_key": "entry-2", "summary": "fail"}],
+            [
+                first,
+                {
+                    **first,
+                    "_coursecorrect_event_key": "entry-2",
+                    "summary": "fail",
+                },
+            ],
             FakeService,
         )
     assert db_session.query(CalendarEventSync).count() == 1
