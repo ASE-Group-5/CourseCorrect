@@ -30,24 +30,25 @@ if st.button("Generate schedule", type="primary"):
 result = st.session_state.get("generated_schedule")
 if result:
     st.success(f"Draft schedule #{result['schedule_id']} saved.")
-    fitness, found, run = st.columns(3)
-    fitness.metric("Fitness", result["fitness"])
-    found.metric("Best found in generation", result["generation_found"])
-    run.metric("Generations run", result["generations_run"])
 
-    conflicts = result["hard_violations"]
-    if conflicts:
-        st.error(f"{len(conflicts)} conflict(s) remain:")
-        st.markdown("\n".join(f"- {c}" for c in conflicts))
-    else:
-        st.success("No conflicts.")
+    for kind, title in (
+        ("hard", "Hard constraints (Must haves)"),
+        ("soft", "Soft constraints (Optional, but preferred)"),
+    ):
+        st.subheader(title)
+        for constraint in result["constraints"]:
+            if constraint["kind"] != kind:
+                continue
+            if constraint["met"]:
+                icon = "✅"
+            else:
+                icon = "❌" if kind == "hard" else "⚠️"
+            st.markdown(f"{icon} {constraint['name']}")
 
-    unmet = result["soft_violations"]
-    with st.expander(f"Preferences not met ({len(unmet)})"):
-        if unmet:
-            st.markdown("\n".join(f"- {v}" for v in unmet))
-        else:
-            st.write("None.")
+    details = result["hard_violations"] + result["soft_violations"]
+    if details:
+        with st.expander(f"Why some constraints aren't met ({len(details)})"):
+            st.markdown("\n".join(f"- {d}" for d in details))
 
 
 st.subheader("Schedules this semester")

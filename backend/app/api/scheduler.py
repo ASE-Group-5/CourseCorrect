@@ -209,6 +209,7 @@ class _Scheduler:
         report = {
             "soft_violations": detail["soft"],
             "hard_violations": detail["hard"],
+            "constraints": self.constraint_summary(best),
             "history": history,
         }
         return ScheduleResult(
@@ -249,6 +250,106 @@ class _Scheduler:
             offspring.append(tuple(a[:cut] + b[cut:] for a, b in zip(p1, p2)))
             offspring.append(tuple(b[:cut] + a[cut:] for a, b in zip(p1, p2)))
         return offspring[:count]
+
+    def constraint_summary(self, ind):
+        """Which constraints the schedule meets"""
+        inst, room, slot = ind
+        n, hour, zone = self.n, self.hour, self.zone
+        cells, loads = {}, {}
+        for c in range(n):
+            cells.setdefault((slot[c], room[c]), []).append(c)
+            loads.setdefault(inst[c], []).append(c)
+
+        def across_zones(c, d):
+            gap = abs(hour[slot[c]] - hour[slot[d]])
+            return gap == 1 and zone[room[c]] != zone[room[d]]
+
+        spread = [(a, b) for a, b, kind in self.pairs if kind == "spread"]
+        related = [(a, b) for a, b, kind in self.pairs if kind == "related"]
+        checks = [
+            (
+                "hard",
+                "instructor_linked",
+                "Every course has an instructor linked to it",
+                True,
+            ),
+            (
+                "hard",
+                "room_fits",
+                "Every room fits its course's enrollment",
+                True,
+            ),
+            (
+                "hard",
+                "room_clash",
+                "No room is booked twice at the same time",
+                all(len(g) == 1 for g in cells.values()),
+            ),
+            (
+                "hard",
+                "instructor_clash",
+                "No instructor teaches two courses at the same time",
+                all(
+                    len({slot[c] for c in g}) == len(g) for g in loads.values()
+                ),
+            ),
+            (
+                "soft",
+                "loads",
+                "Instructors' course loads are within their limits",
+                all(
+                    self.instructors[i].min_course_load
+                    <= len(g)
+                    <= self.instructors[i].max_course_load
+                    for i, g in loads.items()
+                )
+                and all(i in loads for i in self.must_teach),
+            ),
+            (
+                "soft",
+                "room_size",
+                "No room is oversized for its course",
+                all(self.size[c][room[c]] >= 0 for c in range(n)),
+            ),
+            (
+                "soft",
+                "instructor_zones",
+                "No instructor has back-to-back classes in different zones",
+                not any(
+                    across_zones(c, d)
+                    for g in loads.values()
+                    for c in g
+                    for d in g
+                    if c != d
+                ),
+            ),
+        ]
+        if spread:
+            checks.append(
+                (
+                    "soft",
+                    "spread",
+                    "Courses meant to be spread out are not at the same time",
+                    all(hour[slot[a]] != hour[slot[b]] for a, b in spread),
+                )
+            )
+        if related:
+            checks.append(
+                (
+                    "soft",
+                    "related",
+                    "Related courses are not at the same time or back-to-back in different zones",
+                    all(
+                        hour[slot[a]] != hour[slot[b]]
+                        and not across_zones(a, b)
+                        for a, b in related
+                    ),
+                )
+            )
+        return [
+            {"key": k, "name": name, "kind": kind, "met": bool(met)}
+            for kind, k, name, met in checks
+        ]
 
     # ---------------------------------------------------------------- fitness
     def evaluate(self, ind, detail=None):

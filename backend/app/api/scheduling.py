@@ -82,6 +82,7 @@ def generate(
             **result.report,
             "soft_violations": _records(result.report["soft_violations"]),
             "hard_violations": _records(result.report["hard_violations"]),
+            "constraints": result.report["constraints"],
         },
         created_at=datetime.now(timezone.utc),
     )
@@ -98,6 +99,7 @@ def generate(
         "generations_run": result.generations_run,
         "hard_violations": result.report["hard_violations"],
         "soft_violations": result.report["soft_violations"],
+        "constraints": result.report["constraints"],
     }
 
 

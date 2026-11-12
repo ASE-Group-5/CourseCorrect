@@ -13,7 +13,9 @@ from app.api.scheduler import (
 )
 
 
-# Row builders
+# --------------------------------------------------------------------------- #
+# Row builders (any object with these attributes works, as with your ORM models)
+# --------------------------------------------------------------------------- #
 def room(id, capacity=30, zone="A"):
     return NS(id=id, name=f"Room{id}", zone=zone, capacity=capacity)
 
@@ -65,7 +67,9 @@ def one_course(*, capacity=30, enrollment=25, kind="preferred", lo=0, hi=3):
     )
 
 
+# --------------------------------------------------------------------------- #
 # Scoring: per-course terms
+# --------------------------------------------------------------------------- #
 def test_preferred_instructor_in_well_sized_room():
     total, per_entry, detail = ev(one_course(), [0], [0], [0])
     assert total == pytest.approx(0.5 + 0.3)  # preferred + good room size
@@ -95,7 +99,9 @@ def test_room_size_bands(capacity, size_score, expect_message):
     assert bool(detail["soft"]) is expect_message
 
 
+# --------------------------------------------------------------------------- #
 # Scoring: hard constraints
+# --------------------------------------------------------------------------- #
 def test_two_courses_in_same_room_and_slot_is_a_hard_violation():
     sched = build(
         [room(1)],
@@ -152,7 +158,9 @@ def test_a_valid_schedule_has_no_hard_violations():
     assert detail["hard"] == []
 
 
+# --------------------------------------------------------------------------- #
 # Scoring: instructor load
+# --------------------------------------------------------------------------- #
 def test_overload_penalises_each_of_the_instructors_courses():
     sched = build(
         [room(1), room(2)],
@@ -215,7 +223,9 @@ def test_instructor_with_no_minimum_and_no_courses_is_not_penalised():
     assert detail["soft"] == []
 
 
+# --------------------------------------------------------------------------- #
 # Scoring: back-to-back courses for one instructor
+# --------------------------------------------------------------------------- #
 def back_to_back(zone_b):
     sched = build(
         [room(1, zone="A"), room(2, zone=zone_b)],
@@ -236,7 +246,9 @@ def test_back_to_back_in_same_zone_is_rewarded():
 def test_back_to_back_in_different_zones_is_mostly_cancelled_out():
     _, per_entry, detail = back_to_back("B")
     assert per_entry == [pytest.approx(0.8 + 0.5 - 0.4)] * 2
-    assert len(detail["soft"]) == 1 and "different zones" in detail["soft"][0]
+    assert (
+        len(detail["soft"]) == 1 and "different zones" in detail["soft"][0]
+    )  # one message per pair
 
 
 def test_two_hour_gap_is_not_back_to_back():
@@ -251,7 +263,9 @@ def test_two_hour_gap_is_not_back_to_back():
     assert per_entry == [pytest.approx(0.8)] * 2
 
 
+# --------------------------------------------------------------------------- #
 # Scoring: course-pair rules
+# --------------------------------------------------------------------------- #
 def pair_case(kind, hour_a, hour_b, same_zone=True):
     hours = sorted({hour_a, hour_b})
     slots = [slot(i + 1, h) for i, h in enumerate(hours)]
@@ -271,8 +285,9 @@ def pair_case(kind, hour_a, hour_b, same_zone=True):
 @pytest.mark.parametrize(
     "kind, hour_a, hour_b, same_zone, delta, expect_message",
     [
-        ("spread", 9, 15, True, +0.5, False),
-        ("spread", 9, 14, True, +0.5, False),
+        # spread: far apart is good, same time is bad, anything between is neutral
+        ("spread", 9, 15, True, +0.5, False),  # gap 6
+        ("spread", 9, 14, True, +0.5, False),  # gap 5: just over the threshold
         (
             "spread",
             9,
@@ -280,9 +295,10 @@ def pair_case(kind, hour_a, hour_b, same_zone=True):
             True,
             0.0,
             False,
-        ),
+        ),  # gap 4: threshold itself is neutral
         ("spread", 9, 10, True, 0.0, False),
         ("spread", 9, 9, True, -0.5, True),
+        # related: close is good, same time is bad
         ("related", 9, 10, True, +0.5, False),
         (
             "related",
@@ -291,15 +307,17 @@ def pair_case(kind, hour_a, hour_b, same_zone=True):
             False,
             +0.5 - 0.4,
             True,
-        ),
+        ),  # adjacent but different zones
         ("related", 9, 11, True, +0.25, False),
-        ("related", 9, 12, True, 0.0, False),
+        ("related", 9, 12, True, 0.0, False),  # gap 3: neutral
         ("related", 9, 9, True, -0.25, True),
     ],
 )
 def test_pair_rules(kind, hour_a, hour_b, same_zone, delta, expect_message):
     _, per_entry, detail = pair_case(kind, hour_a, hour_b, same_zone)
-    assert per_entry == [pytest.approx(0.8 + delta)] * 2
+    assert (
+        per_entry == [pytest.approx(0.8 + delta)] * 2
+    )  # both courses get the same delta
     assert bool(detail["soft"]) is expect_message
     assert detail["hard"] == []
 
@@ -318,7 +336,9 @@ def test_pair_rule_naming_a_course_outside_the_input_is_ignored():
     assert total == pytest.approx(0.8)
 
 
+# --------------------------------------------------------------------------- #
 # Input handling
+# --------------------------------------------------------------------------- #
 class PrefEnum(str, enum.Enum):
     preferred = "preferred"
     qualified = "qualified"
@@ -346,6 +366,7 @@ def test_enum_members_are_accepted_for_preference_and_rule_type():
 
 
 def test_preference_rows_for_unknown_instructors_are_ignored():
+    # e.g. an inactive instructor you left out of the `instructors` argument
     result = generate_schedule(
         [room(1)],
         [slot(1, 9)],
@@ -358,7 +379,9 @@ def test_preference_rows_for_unknown_instructors_are_ignored():
     assert result.entries[0]["instructor_id"] == 1
 
 
+# --------------------------------------------------------------------------- #
 # Infeasible input fails fast with a useful message
+# --------------------------------------------------------------------------- #
 def test_course_with_no_linked_instructor_is_rejected():
     with pytest.raises(InfeasibleError, match="C1.*no instructor"):
         generate_schedule(
@@ -424,7 +447,9 @@ def test_empty_inputs_are_rejected(empty):
         )
 
 
-# End to end on a small semester
+# --------------------------------------------------------------------------- #
+# End to end on a small realistic semester
+# --------------------------------------------------------------------------- #
 @pytest.fixture(scope="module")
 def semester():
     rooms = [
@@ -447,7 +472,7 @@ def semester():
         course(7, 90),
         course(8, 55),
     ]
-    teaching = {
+    teaching = {  # instructor -> (preferred courses, qualified courses)
         1: ([1, 2, 3], [4]),
         2: ([4, 6], [3, 5]),
         3: ([5, 3], [1, 2]),
@@ -500,7 +525,9 @@ def assert_valid(result, semester):
     courses = {c.id: c for c in semester.courses}
     linked = {(p.course_id, p.instructor_id) for p in semester.prefs}
 
-    assert sorted(e["course_id"] for e in result.entries) == sorted(courses)
+    assert sorted(e["course_id"] for e in result.entries) == sorted(
+        courses
+    )  # each course once
     for e in result.entries:
         assert (e["course_id"], e["instructor_id"]) in linked
         assert (
@@ -530,6 +557,7 @@ def test_result_is_a_schedule_result_with_db_ready_entries(results):
 
 
 def test_quality_is_close_to_the_best_known_score(results):
+    # best seen for this problem is about 12.9; guard against a regression in the search
     for result in results:
         assert result.fitness >= 11.0
 
@@ -558,12 +586,15 @@ def test_soft_violation_messages_match_what_the_schedule_actually_has(results):
             assert (f"Inst{i} has 0 courses (min 1)" in soft) == (i not in used)
 
 
-# Report, history, and stopping rules
+# --------------------------------------------------------------------------- #
+# Report, history, stopping rules
+# --------------------------------------------------------------------------- #
 def test_report_has_the_expected_shape_and_is_json_serialisable(results):
     result = results[0]
     assert set(result.report) == {
         "soft_violations",
         "hard_violations",
+        "constraints",
         "history",
     }
     json.dumps(result.report)
@@ -598,6 +629,7 @@ def test_generation_found_matches_the_history(results):
         assert found == pytest.approx(
             max(h["best"] for h in history), abs=0.001
         )
+        # nothing improved on it in later generations
         assert all(
             h["best"] <= found + 1e-9
             for h in history[result.generation_found :]
@@ -633,7 +665,9 @@ def test_progress_callback_receives_every_generation(semester):
     assert seen == result.report["history"]
 
 
+# --------------------------------------------------------------------------- #
 # Determinism and edge cases
+# --------------------------------------------------------------------------- #
 def test_same_seed_gives_the_same_schedule(semester):
     a = run(semester, seed=7, population_size=50)
     b = run(semester, seed=7, population_size=50)
@@ -699,3 +733,49 @@ def test_genetic_operators_only_ever_produce_valid_individuals(semester):
             assert inst[c] in sched.cand_inst[c]
             assert rm[c] in sched.cand_room[c]
             assert 0 <= sl[c] < sched.n_slots
+
+
+def test_constraint_summary_agrees_with_the_violation_messages(semester):
+    """The summary re-states evaluate()'s rules; this keeps the two from drifting apart."""
+    sched = build(
+        semester.rooms,
+        semester.slots,
+        semester.instructors,
+        semester.courses,
+        semester.prefs,
+        semester.rules,
+    )
+    violated = {
+        "room_clash": lambda d: any(" all in " in m for m in d["hard"]),
+        "instructor_clash": lambda d: any(" teaches " in m for m in d["hard"]),
+        "loads": lambda d: any(" courses (m" in m for m in d["soft"]),
+        "room_size": lambda d: any("oversized" in m for m in d["soft"]),
+        "instructor_zones": lambda d: any(
+            "has back-to-back" in m for m in d["soft"]
+        ),
+        "spread": lambda d: any("should be spread out" in m for m in d["soft"]),
+        "related": lambda d: any(m.startswith("Related") for m in d["soft"]),
+    }
+    for _ in range(300):
+        ind = sched._random_individual()
+        detail = {"hard": [], "soft": []}
+        sched.evaluate(ind, detail)
+        met = {c["key"]: c["met"] for c in sched.constraint_summary(ind)}
+        for key, check in violated.items():
+            assert met[key] == (not check(detail)), key
+
+
+def test_the_result_reports_which_constraints_are_met(results):
+    for result in results:
+        constraints = result.report["constraints"]
+        detail = {
+            "hard": result.report["hard_violations"],
+            "soft": result.report["soft_violations"],
+        }
+        assert {c["kind"] for c in constraints} == {"hard", "soft"}
+        assert all(c["met"] for c in constraints if c["kind"] == "hard") == (
+            detail["hard"] == []
+        )
+        assert [c["met"] for c in constraints if c["key"] == "room_clash"] == [
+            not any(" all in " in m for m in detail["hard"])
+        ]
