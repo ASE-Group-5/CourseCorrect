@@ -10,8 +10,17 @@ ui.apply_styles()
 
 
 def log_out() -> None:
-    auth.log_out()
-    st.rerun()
+    @st.dialog("Log out")
+    def confirm_log_out() -> None:
+        st.write("Are you sure you want to log out?")
+        cancel, confirm = st.columns(2)
+        if cancel.button("Cancel"):
+            st.switch_page(pages[0])
+        if confirm.button("Log out", type="primary"):
+            auth.log_out()
+            st.rerun()
+
+    confirm_log_out()
 
 
 LOGIN = st.Page("views/login.py", title="Log in", default=True)

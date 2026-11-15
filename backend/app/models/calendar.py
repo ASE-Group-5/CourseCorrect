@@ -22,6 +22,9 @@ class CalendarLink(Base):
     )
     provider: Mapped[str] = mapped_column(String(30), default="google")
     calendar_id: Mapped[str] = mapped_column(String(255))
+    google_account_fingerprint: Mapped[Optional[str]] = mapped_column(
+        String(64)
+    )
     # Must be encrypted at rest before real tokens are stored (story 8).
     refresh_token: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(
@@ -55,13 +58,23 @@ class CalendarEventSync(Base):
 
     __tablename__ = "calendar_event_syncs"
     __table_args__ = (
-        UniqueConstraint("calendar_link_id", "event_key"),
+        UniqueConstraint(
+            "calendar_link_id",
+            "google_account_fingerprint",
+            "calendar_id",
+            "event_key",
+            name="uq_calendar_event_syncs_account_calendar_event",
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
     calendar_link_id: Mapped[int] = mapped_column(
         ForeignKey("calendar_links.id", ondelete="CASCADE"), index=True
     )
+    google_account_fingerprint: Mapped[Optional[str]] = mapped_column(
+        String(64)
+    )
+    calendar_id: Mapped[Optional[str]] = mapped_column(String(255))
     event_key: Mapped[str] = mapped_column(String(255))
     google_event_id: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(

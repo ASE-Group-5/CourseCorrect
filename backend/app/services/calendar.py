@@ -1,5 +1,6 @@
 """Calendar synchronization service."""
 
+import logging
 from collections.abc import Callable
 from datetime import date, datetime, timedelta
 from typing import Any
@@ -13,6 +14,7 @@ from app.services.calendar_security import decrypt_refresh_token
 
 GOOGLE_TOKEN_URI = "https://oauth2.googleapis.com/token"
 GOOGLE_CALENDAR_SCOPES = ["https://www.googleapis.com/auth/calendar.events"]
+logger = logging.getLogger(__name__)
 
 
 def build_event(
@@ -158,48 +160,74 @@ def push_events(
     ] = GoogleCalendarService,
 ) -> int:
     """Insert events once and persist Google event IDs."""
+    inserted = skipped = failed = attempted = 0
+    try:
+        if not link.google_account_fingerprint:
+            raise ValueError("Google account identity is unavailable")
+        if not link.calendar_id:
+            raise ValueError("Google Calendar identity is unavailable")
 
-    service = service_factory(link)
+        service = service_factory(link)
 
-    created = 0
+        for source_event in events:
+            attempted += 1
+            event = dict(source_event)
+            event_key = event.pop("_coursecorrect_event_key", None)
+            if not event_key:
+                raise ValueError("Calendar events require a stable event key")
 
-    for source_event in events:
-        event = dict(source_event)
-
-        event_key = event.pop(
-            "_coursecorrect_event_key",
-            None,
-        )
-
-        if not event_key:
-            raise ValueError("Calendar events require a stable event key")
-
-        existing = (
-            db.query(CalendarEventSync)
-            .filter(
-                CalendarEventSync.calendar_link_id == link.id,
-                CalendarEventSync.event_key == event_key,
+            existing = (
+                db.query(CalendarEventSync)
+                .filter(
+                    CalendarEventSync.calendar_link_id == link.id,
+                    CalendarEventSync.google_account_fingerprint
+                    == link.google_account_fingerprint,
+                    CalendarEventSync.calendar_id == link.calendar_id,
+                    CalendarEventSync.event_key == event_key,
+                )
+                .first()
             )
-            .first()
-        )
 
-        if existing is not None:
-            continue
+            if existing is not None:
+                skipped += 1
+                continue
 
-        google_event = service.insert_event(event)
-
-        db.add(
-            CalendarEventSync(
-                calendar_link_id=link.id,
-                event_key=event_key,
-                google_event_id=google_event["id"],
+            google_event = service.insert_event(event)
+            db.add(
+                CalendarEventSync(
+                    calendar_link_id=link.id,
+                    google_account_fingerprint=link.google_account_fingerprint,
+                    calendar_id=link.calendar_id,
+                    event_key=event_key,
+                    google_event_id=google_event["id"],
+                )
             )
+            db.commit()
+            inserted += 1
+
+        return inserted
+    except Exception as exc:
+        failed += 1
+        db.rollback()
+        logger.warning(
+            "Google Calendar sync operation failed user_id=%s link_id=%s "
+            "exception_type=%s",
+            link.user_id,
+            link.id,
+            type(exc).__name__,
         )
-
-        db.commit()
-        created += 1
-
-    return created
+        raise
+    finally:
+        logger.info(
+            "Google Calendar sync summary user_id=%s link_id=%s "
+            "inserted=%s skipped=%s failed=%s attempted=%s",
+            link.user_id,
+            link.id,
+            inserted,
+            skipped,
+            failed,
+            attempted,
+        )
 
 
 CalendarServiceFactory = Callable[[CalendarLink], GoogleCalendarService]

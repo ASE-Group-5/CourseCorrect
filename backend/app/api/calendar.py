@@ -26,6 +26,11 @@ def push_schedule_to_calendar(
     )
     if link is None or not link.refresh_token:
         raise HTTPException(status_code=404, detail="No calendar found")
+    if not link.google_account_fingerprint:
+        raise HTTPException(
+            status_code=409,
+            detail="Reconnect Google Calendar to verify the connected account",
+        )
     try:
         decrypt_refresh_token(link.refresh_token)
     except (RuntimeError, ValueError):

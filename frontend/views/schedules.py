@@ -53,6 +53,26 @@ def choose_user(role: str) -> str | None:
     return st.selectbox(role.title(), list(names), format_func=names.get)
 
 
+def show_calendar_connection_result() -> None:
+    result = st.query_params.get("calendar_connection")
+    if not result:
+        return
+
+    st.query_params.pop("calendar_connection", None)
+    if result == "connected":
+        st.success("Google Calendar account updated.")
+    elif result == "cancelled":
+        st.info(
+            "Google authorization was cancelled; your existing connection, "
+            "if any, is unchanged."
+        )
+    elif result == "failed":
+        st.error(
+            "Google authorization failed; your existing connection, if any, "
+            "is unchanged. Please try again."
+        )
+
+
 if is_coordinator:
     view = st.radio(
         "View schedule for",
@@ -103,6 +123,7 @@ elif view == "Instructor":
                     )
 
     if is_instructor:
+        show_calendar_connection_result()
         try:
             calendar_status = api_client.request(
                 "GET", "/calendar/status", token=auth.get_token()
@@ -114,6 +135,7 @@ elif view == "Instructor":
                 st.info("Demo Dates enabled: Spring 2027, Mondays/Wednesdays")
             if calendar_status.get("connected"):
                 st.success("Google Calendar connected.")
+                connection_action = "Change Google Account"
             else:
                 if calendar_status.get("reconnect_required"):
                     st.warning("Google Calendar authorization is no longer valid.")
@@ -121,18 +143,18 @@ elif view == "Instructor":
                 else:
                     st.info("Google Calendar is not connected.")
                     connection_action = "Connect Google Calendar"
-                if st.button(connection_action):
-                    with ui.loading():
-                        try:
-                            auth_url = api_client.request(
-                                "GET",
-                                "/calendar/oauth/connect",
-                                token=auth.get_token(),
-                            )["authorization_url"]
-                        except api_client.BackendError as exc:
-                            st.error(exc.detail)
-                        else:
-                            st.link_button("Continue with Google", auth_url)
+            if st.button(connection_action):
+                with ui.loading():
+                    try:
+                        auth_url = api_client.request(
+                            "GET",
+                            "/calendar/oauth/connect",
+                            token=auth.get_token(),
+                        )["authorization_url"]
+                    except api_client.BackendError as exc:
+                        st.error(exc.detail)
+                    else:
+                        st.link_button("Continue with Google", auth_url)
 
 else:
     st.subheader("View student schedule")

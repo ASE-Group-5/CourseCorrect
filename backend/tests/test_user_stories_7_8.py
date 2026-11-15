@@ -192,7 +192,10 @@ def test_build_event_uses_explicit_schedule_date(
 def test_push_schedule_without_schedule_date_returns_validation_error(
     client: TestClient, db_session: Session, monkeypatch
 ) -> None:
-    from app.services.calendar_security import encrypt_refresh_token
+    from app.services.calendar_security import (
+        encrypt_refresh_token,
+        google_account_fingerprint,
+    )
 
     _coordinator, entry = make_schedule(db_session)
     monkeypatch.setenv("CALENDAR_DEMO_MODE", "false")
@@ -200,6 +203,7 @@ def test_push_schedule_without_schedule_date_returns_validation_error(
         CalendarLink(
             user_id=entry.instructor_id,
             calendar_id="jane@example.com",
+            google_account_fingerprint=google_account_fingerprint("test-account"),
             refresh_token=encrypt_refresh_token("refresh-token"),
         )
     )
