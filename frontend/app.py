@@ -1,12 +1,4 @@
-"""CourseCorrect Streamlit frontend: the entry point and page gate.
-
-Only the pages the current user may see are registered with `st.navigation`,
-so any other page cannot be opened, even by typing its URL. The backend
-checks every request again; this gate only decides what is shown.
-
-Page scripts live in `views/`, not `pages/`: if a `pages/` folder exists,
-Streamlit serves the scripts in it directly and this gate is skipped.
-"""
+"""CourseCorrect Streamlit frontend: the entry point and page gate."""
 
 import streamlit as st
 
@@ -50,11 +42,11 @@ PAGES_BY_ROLE = {
         SCHEDULES,
         REQUESTS,
         LOG_OUT,
-        GENERATE,
     ],
     "coordinator": [
         dashboard("coordinator"),
         SCHEDULES,
+        GENERATE,
         REQUESTS,
         USERS,
         LOG_OUT,
@@ -62,8 +54,6 @@ PAGES_BY_ROLE = {
 }
 LOGGED_OUT_PAGES = [LOGIN, REGISTER]
 
-# Every page change or click reruns this file, so these checks run each time:
-# restore a saved login after a refresh, then end it if it has expired.
 auth.restore_from_cookie()
 auth.check_session()
 

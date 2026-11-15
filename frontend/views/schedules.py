@@ -1,14 +1,11 @@
-"""Schedule viewing page.
-
-Students and instructors see their own schedule; coordinators can look up
-anyone's.
-"""
+"""Schedule viewing page."""
 
 import streamlit as st
 from fpdf import FPDF
 
 import api_client
 import auth
+import schedule_admin
 import ui
 
 st.title("Schedules")
@@ -38,22 +35,41 @@ def build_schedule_pdf(classes: list[dict]) -> bytes:
     return bytes(pdf.output())
 
 
+def choose_user(role: str) -> str | None:
+    """Return the username a coordinator picks from the active `role` users."""
+    try:
+        people = api_client.request(
+            "GET",
+            "/users",
+            token=auth.get_token(),
+            params={"role": role, "include_inactive": False},
+        )
+    except api_client.BackendError as exc:
+        st.error(str(exc))
+        return None
+    names = {
+        p["username"]: f"{p['full_name']} ({p['username']})" for p in people
+    }
+    return st.selectbox(role.title(), list(names), format_func=names.get)
+
+
 if is_coordinator:
     view = st.radio(
-        "View schedule for", ["Instructor", "Student"], horizontal=True
+        "View schedule for",
+        ["Semester", "Instructor", "Student"],
+        horizontal=True,
     )
 else:
     view = user["role"].title()
 
-if view == "Instructor":
+if view == "Semester":
+    st.subheader("Published schedule")
+    schedule_admin.published_schedule()
+elif view == "Instructor":
     st.subheader("View instructor schedule")
-    username = (
-        st.text_input("Instructor username")
-        if is_coordinator
-        else user["username"]
-    )
+    username = choose_user("instructor") if is_coordinator else user["username"]
 
-    if st.button("View schedule"):
+    if st.button("View schedule", disabled=not username):
         with ui.loading():
             try:
                 classes = api_client.request(
@@ -120,13 +136,9 @@ if view == "Instructor":
 
 else:
     st.subheader("View student schedule")
-    username = (
-        st.text_input("Student username")
-        if is_coordinator
-        else user["username"]
-    )
+    username = choose_user("student") if is_coordinator else user["username"]
 
-    if st.button("View schedule"):
+    if st.button("View schedule", disabled=not username):
         with ui.loading():
             try:
                 classes = api_client.request(

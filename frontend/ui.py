@@ -1,8 +1,4 @@
-"""Shared look and feel: global styles and the loading indicator.
-
-Colors, fonts and text size live in `.streamlit/config.toml`; this module
-only adds what the theme cannot express.
-"""
+"""Shared look and feel: global styles and the loading indicator."""
 
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -39,17 +35,14 @@ STYLES = """
     white-space: nowrap;
 }
 
-/* Room for wide tables at the larger text size. */
 [data-testid="stMain"] [data-testid="stMainBlockContainer"] {
     max-width: 64rem;
 }
 
-/* The one-off login-cookie script (auth.sync_cookie) takes no space. */
 [data-testid="stElementContainer"]:has(.cc-cookie-sync) {
     display: none;
 }
 
-/* Forms read as cards on the lighter page background. */
 [data-testid="stForm"] {
     background: #FFFFFF;
     padding: 1.5rem 1.5rem 1rem;

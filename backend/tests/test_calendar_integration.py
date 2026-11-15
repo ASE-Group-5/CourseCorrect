@@ -1,6 +1,7 @@
 """Mocked tests for independent Google Calendar integration."""
 
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,7 +16,7 @@ from app.models.calendar import (
 )
 from app.models.common import Role
 from app.models.user import User
-from app.services.calendar import push_events
+from app.services.calendar import GoogleCalendarService, push_events
 from app.services.calendar_security import (
     decrypt_refresh_token,
     encrypt_refresh_token,
@@ -26,11 +27,15 @@ from app.services.calendar_security import (
     ("error", "category"),
     [
         (
-            type("InvalidClientError", (Exception,), {"error": "invalid_client"})(),
+            type(
+                "InvalidClientError", (Exception,), {"error": "invalid_client"}
+            )(),
             "invalid_client_credentials",
         ),
         (
-            type("InvalidGrantError", (Exception,), {"error": "invalid_grant"})(),
+            type(
+                "InvalidGrantError", (Exception,), {"error": "invalid_grant"}
+            )(),
             "invalid_or_expired_authorization_code",
         ),
         (
@@ -71,7 +76,9 @@ def instructor() -> User:
     )
 
 
-def test_oauth_state_rejects_unknown_or_replayed_state(client: TestClient) -> None:
+def test_oauth_state_rejects_unknown_or_replayed_state(
+    client: TestClient,
+) -> None:
     response = client.get("/calendar/oauth/callback?state=unknown&code=code")
     assert response.status_code == 400
     assert response.json()["detail"] == "Invalid or expired OAuth state"
@@ -125,6 +132,7 @@ def test_oauth_connect_binds_state_and_links_encrypted_refresh_token(
     )
     assert callback.status_code == 200
     link = db_session.query(CalendarLink).one()
+    assert link.refresh_token is not None
     assert decrypt_refresh_token(link.refresh_token) == "google-refresh-token"
     assert state.used_at is not None
     replay = client.get(
@@ -160,7 +168,7 @@ def test_successful_reconnection_replaces_existing_encrypted_token(
     monkeypatch.setattr(
         calendar_oauth,
         "_flow",
-        lambda state=None: (captured.update(state=state) or FakeFlow()),
+        lambda state=None: captured.update(state=state) or FakeFlow(),
     )
     assert client.get("/calendar/oauth/connect").status_code == 200
     callback = client.get(
@@ -170,7 +178,11 @@ def test_successful_reconnection_replaces_existing_encrypted_token(
     assert callback.status_code == 200
     db_session.refresh(existing_link)
     assert db_session.query(CalendarLink).count() == 1
-    assert decrypt_refresh_token(existing_link.refresh_token) == "new-refresh-token"
+    assert existing_link.refresh_token is not None
+    assert (
+        decrypt_refresh_token(existing_link.refresh_token)
+        == "new-refresh-token"
+    )
 
 
 def test_failed_reconnection_preserves_existing_link(
@@ -200,7 +212,7 @@ def test_failed_reconnection_preserves_existing_link(
     monkeypatch.setattr(
         calendar_oauth,
         "_flow",
-        lambda state=None: (captured.update(state=state) or FailedFlow()),
+        lambda state=None: captured.update(state=state) or FailedFlow(),
     )
     assert client.get("/calendar/oauth/connect").status_code == 200
     response = client.get(
@@ -210,10 +222,16 @@ def test_failed_reconnection_preserves_existing_link(
     assert response.status_code == 400
     db_session.refresh(existing_link)
     assert db_session.query(CalendarLink).count() == 1
-    assert decrypt_refresh_token(existing_link.refresh_token) == "old-refresh-token"
+    assert existing_link.refresh_token is not None
+    assert (
+        decrypt_refresh_token(existing_link.refresh_token)
+        == "old-refresh-token"
+    )
 
 
-def test_only_instructors_can_start_oauth(client: TestClient, db_session) -> None:
+def test_only_instructors_can_start_oauth(
+    client: TestClient, db_session
+) -> None:
     user = instructor()
     user.role = Role.STUDENT
     db_session.add(user)
@@ -261,18 +279,31 @@ def test_duplicate_prevention_and_partial_failure(db_session) -> None:
         push_events(
             db_session,
             link,
-            [first, {**first, "_coursecorrect_event_key": "entry-2", "summary": "fail"}],
-            FakeService,
+            [
+                first,
+                {
+                    **first,
+                    "_coursecorrect_event_key": "entry-2",
+                    "summary": "fail",
+                },
+            ],
+            cast(type[GoogleCalendarService], FakeService),
         )
     assert db_session.query(CalendarEventSync).count() == 1
-    assert push_events(db_session, link, [first], FakeService) == 0
+    assert (
+        push_events(
+            db_session,
+            link,
+            [first],
+            cast(type[GoogleCalendarService], FakeService),
+        )
+        == 0
+    )
 
 
 def test_revoked_google_authorization_is_reported(monkeypatch) -> None:
     from google.auth.exceptions import RefreshError
     from google.oauth2.credentials import Credentials
-
-    from app.services.calendar import GoogleCalendarService
 
     link = CalendarLink(
         user_id=3,

@@ -1,13 +1,4 @@
-"""Route dependencies: who is logged in, and what they may do.
-
-Every route except the public ones (health checks, login and account
-creation) must depend on `get_current_user` or `require_role`.
-
-The logged-in user comes from the signed token, not the database, so these
-checks cost no query. A change to a user (role, deactivation) therefore takes
-effect when their token expires (ACCESS_TOKEN_EXPIRE_MINUTES) or they log in
-again. Login itself always checks the database.
-"""
+"""Route dependencies: who is logged in, and what they may do."""
 
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -44,7 +35,7 @@ def get_current_user(
     claims = (
         decode_access_token(credentials.credentials) if credentials else None
     )
-    if claims is None:  # No token, or an invalid or expired one.
+    if claims is None:
         raise not_authenticated
     try:
         role = Role(claims["role"])
@@ -54,10 +45,7 @@ def get_current_user(
 
 
 def require_role(*roles: Role) -> Callable[..., CurrentUser]:
-    """Return a dependency that only lets users with one of the roles in.
-
-    Example: `Depends(require_role(Role.COORDINATOR))`.
-    """
+    """Return a dependency that only lets users with one of the roles in."""
 
     def check_role(
         user: CurrentUser = Depends(get_current_user),

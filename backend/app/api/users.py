@@ -1,13 +1,4 @@
-"""User management endpoints for coordinators.
-
-Coordinators list, create and edit users (including role and active status),
-reset passwords, and assign courses: enrollments for students and teaching
-preferences for instructors (a constraint for story 3). Users are deactivated,
-never deleted, so schedules and requests that mention them stay intact.
-
-Deactivated users cannot log in. Anyone already logged in keeps access until
-their token expires (ACCESS_TOKEN_EXPIRE_MINUTES), see app/api/deps.py.
-"""
+"""User management endpoints for coordinators."""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, model_validator

@@ -41,7 +41,6 @@ def fits_bcrypt(value: str) -> str:
     return value
 
 
-# Field rules shared by sign-up and by coordinators managing users (users.py).
 Username = Annotated[
     str,
     BeforeValidator(strip_spaces),

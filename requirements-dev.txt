@@ -1,2 +1,1 @@
-# Developer tooling shared by the whole project (installed into the root .venv).
 ruff>=0.6

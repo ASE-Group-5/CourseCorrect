@@ -133,9 +133,6 @@ def test_require_role_rejects_anonymous(
     assert response.status_code == 401
 
 
-# --- Tokens carry the user, so requests need no database lookup -------------
-
-
 def bearer(claims: dict) -> dict[str, str]:
     """Sign arbitrary claims with the app's real key (to forge test tokens)."""
     settings = get_settings()

@@ -1,10 +1,4 @@
-"""User management page (coordinators only).
-
-Coordinators find and edit users (details, role, active status, an
-instructor's coordinator and course load), reset passwords, assign courses per
-semester (enrollments for students, teaching preferences for instructors) and
-add new users of any role.
-"""
+"""User management page (coordinators only)."""
 
 import streamlit as st
 

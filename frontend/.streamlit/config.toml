@@ -8,7 +8,6 @@ linkColor = "#2E5BFF"
 borderColor = "#D5DCEB"
 showWidgetBorder = true
 
-# Bigger text everywhere: the default root size is 16px.
 baseFontSize = 18
 font = "Inter:https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap, sans-serif"
 headingFontWeights = [700, 650, 600]

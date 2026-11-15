@@ -9,6 +9,11 @@ import ui
 st.title("Requests")
 
 user = auth.current_user()
+
+if user is None:
+    st.warning("Please log in to access modification requests.")
+    st.stop()
+
 is_coordinator = user["role"] == "coordinator"
 token = auth.get_token()
 
@@ -86,17 +91,6 @@ if not is_coordinator:
                     st.success("Request submitted.")
 
 st.subheader("Requests to review" if is_coordinator else "My requests")
-if is_coordinator and st.button("View Requests"):
-    with ui.loading():
-        try:
-            open_requests = call("GET", "/requests/open")
-        except api_client.BackendError as exc:
-            st.error(str(exc))
-        else:
-            if open_requests:
-                st.table(open_requests)
-            else:
-                st.info("No open modification requests.")
 
 try:
     requests_list = call("GET", "/modifications")

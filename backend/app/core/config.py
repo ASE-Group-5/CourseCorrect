@@ -24,14 +24,10 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./dev.db"
     database_url_direct: str | None = None
 
-    # Login tokens (stories 1-2). No defaults: these must be set in `.env`
-    # (`python scripts/dev.py setup` adds them) or, on Render, as environment
-    # variables. The secret signs every token, so it must be long and private.
     jwt_secret_key: str = Field(min_length=32)
     jwt_algorithm: str
     access_token_expire_minutes: int = Field(gt=0)
 
-    # Google Calendar integration. These remain unset until OAuth is configured.
     google_client_id: str | None = None
     google_client_secret: str | None = None
     google_redirect_uri: str = "http://localhost:8000/calendar/oauth/callback"
@@ -52,4 +48,4 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Returns a cached Settings instance."""
-    return Settings()  # type: ignore[call-arg]  # Fields come from `.env`.
+    return Settings()  # type: ignore[call-arg]
