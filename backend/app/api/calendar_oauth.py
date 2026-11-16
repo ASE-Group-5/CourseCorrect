@@ -41,7 +41,10 @@ def _oauth_error_category(error: Exception) -> str:
         str(part).lower() for part in safe_fields if isinstance(part, str)
     )
     error_type = type(error).__name__.lower()
-    if "redirect_uri_mismatch" in safe_text or "redirect uri mismatch" in safe_text:
+    if (
+        "redirect_uri_mismatch" in safe_text
+        or "redirect uri mismatch" in safe_text
+    ):
         return "redirect_uri_mismatch"
     if "invalid_client" in safe_text or "unauthorized_client" in safe_text:
         return "invalid_client_credentials"
@@ -69,7 +72,8 @@ def _frontend_result(result: str) -> RedirectResponse:
     """Return the browser to schedules with a non-sensitive result code."""
     frontend_url = get_settings().frontend_url.rstrip("/")
     return RedirectResponse(
-        f"{frontend_url}/schedules?calendar_connection={result}", status_code=303
+        f"{frontend_url}/schedules?calendar_connection={result}",
+        status_code=303,
     )
 
 
@@ -103,7 +107,8 @@ def _flow(state: str | None = None):
         from google_auth_oauthlib.flow import Flow
     except ImportError as exc:
         raise HTTPException(
-            status_code=503, detail="Google Calendar dependencies are not installed"
+            status_code=503,
+            detail="Google Calendar dependencies are not installed",
         ) from exc
     return Flow.from_client_config(
         {
@@ -191,7 +196,9 @@ def google_calendar_callback(
     expires_at = (
         oauth_state.expires_at.replace(tzinfo=timezone.utc)
         if oauth_state is not None and oauth_state.expires_at.tzinfo is None
-        else oauth_state.expires_at if oauth_state is not None else None
+        else oauth_state.expires_at
+        if oauth_state is not None
+        else None
     )
     if (
         oauth_state is None
@@ -202,7 +209,9 @@ def google_calendar_callback(
             "Google Calendar OAuth failure category=oauth_state_validation_failure "
             "exception_type=state_validation"
         )
-        raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
+        raise HTTPException(
+            status_code=400, detail="Invalid or expired OAuth state"
+        )
 
     if error is not None:
         _consume_oauth_state(db, oauth_state, now)
@@ -289,7 +298,9 @@ def calendar_status(
     db: Session = Depends(get_db),
 ) -> dict[str, bool | str]:
     """Report connected only when encrypted credentials can be decrypted."""
-    link = db.query(CalendarLink).filter(CalendarLink.user_id == user.id).first()
+    link = (
+        db.query(CalendarLink).filter(CalendarLink.user_id == user.id).first()
+    )
     connected = False
     reconnect_required = False
     linked = link is not None

@@ -36,7 +36,9 @@ def test_demo_mode_requires_explicit_opt_in(monkeypatch) -> None:
     assert demo_mode_enabled() is False
 
 
-def test_demo_event_uses_boundaries_timezone_and_database_fields(db_session) -> None:
+def test_demo_event_uses_boundaries_timezone_and_database_fields(
+    db_session,
+) -> None:
     _coordinator, entry = make_schedule(db_session)
     event = build_demo_event(entry)
 
@@ -65,7 +67,9 @@ def test_enabled_push_uses_only_authenticated_instructor_entries(
         CalendarLink(
             user_id=entry.instructor_id,
             calendar_id="primary",
-            google_account_fingerprint=google_account_fingerprint("test-account"),
+            google_account_fingerprint=google_account_fingerprint(
+                "test-account"
+            ),
             refresh_token=encrypt_refresh_token("refresh-token"),
         )
     )
@@ -94,7 +98,9 @@ def test_google_failure_does_not_report_success(
         CalendarLink(
             user_id=entry.instructor_id,
             calendar_id="primary",
-            google_account_fingerprint=google_account_fingerprint("test-account"),
+            google_account_fingerprint=google_account_fingerprint(
+                "test-account"
+            ),
             refresh_token=encrypt_refresh_token("refresh-token"),
         )
     )

@@ -22,7 +22,9 @@ def test_connected_instructor_can_start_account_change(monkeypatch) -> None:
                 "demo_dates_enabled": False,
             }
         if path == "/calendar/oauth/connect":
-            return {"authorization_url": "https://accounts.google.test/authorize"}
+            return {
+                "authorization_url": "https://accounts.google.test/authorize"
+            }
         return []
 
     monkeypatch.setattr(api_client, "request", fake_request)
@@ -36,9 +38,13 @@ def test_connected_instructor_can_start_account_change(monkeypatch) -> None:
 
     assert any(button.label == "Change Google Account" for button in app.button)
     change_button = next(
-        button for button in app.button if button.label == "Change Google Account"
+        button
+        for button in app.button
+        if button.label == "Change Google Account"
     )
     change_button.click().run()
 
     assert ("GET", "/calendar/oauth/connect") in calls
-    assert any(link.label == "Continue with Google" for link in app.get("link_button"))
+    assert any(
+        link.label == "Continue with Google" for link in app.get("link_button")
+    )
