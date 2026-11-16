@@ -19,19 +19,22 @@ def build_schedule_pdf(classes: list[dict]) -> bytes:
     """Render the student's classes to a simple PDF document."""
     pdf = FPDF()
     pdf.add_page()
-    pdf.set_font("Helvetica", size=12)
+    pdf.set_font("Helvetica", style="B", size=14)
     pdf.cell(0, 10, "Class Schedule", ln=True)
     pdf.ln(2)
-    for entry in classes:
-        pdf.multi_cell(
-            0,
-            8,
-            f"{entry['course_code']} - {entry['course_name']}\n"
-            f"Room: {entry['room_name']} ({entry['room_building']})\n"
-            f"Time: {entry['time_slot_label']}\n"
-            f"Instructor: {entry['instructor_name']}",
-        )
-        pdf.ln(2)
+    pdf.set_font("Helvetica", size=12)
+    with pdf.table() as table:
+        table.row(("Course Code", "Course Name", "Room", "Time", "Instructor"))
+        for entry in classes:
+            table.row(
+                (
+                    str(entry["course_code"]),
+                    str(entry["course_name"]),
+                    f"{entry['room_name']} ({entry['room_building']})",
+                    str(entry["time_slot_label"]),
+                    str(entry["instructor_name"]),
+                )
+            )
     return bytes(pdf.output())
 
 
@@ -116,11 +119,11 @@ elif view == "Instructor":
             else:
                 events_created = result.get("events_created")
                 if events_created is None:
-                    st.error("Calendar synchronization returned an invalid response.")
-                else:
-                    st.success(
-                        f"Created {events_created} calendar event(s)."
+                    st.error(
+                        "Calendar synchronization returned an invalid response."
                     )
+                else:
+                    st.success(f"Created {events_created} calendar event(s).")
 
     if is_instructor:
         show_calendar_connection_result()
@@ -138,7 +141,9 @@ elif view == "Instructor":
                 connection_action = "Change Google Account"
             else:
                 if calendar_status.get("reconnect_required"):
-                    st.warning("Google Calendar authorization is no longer valid.")
+                    st.warning(
+                        "Google Calendar authorization is no longer valid."
+                    )
                     connection_action = "Reconnect Google Calendar"
                 else:
                     st.info("Google Calendar is not connected.")
@@ -160,13 +165,35 @@ else:
     st.subheader("View student schedule")
     username = choose_user("student") if is_coordinator else user["username"]
 
-    if st.button("View schedule", disabled=not username):
+    params = None
+    if is_coordinator:
+        show = st.button("View schedule", disabled=not username)
+    else:
+        show = False
+        try:
+            semesters = api_client.request(
+                "GET",
+                f"/schedules/student/{username}/semesters",
+                token=auth.get_token(),
+            )
+        except api_client.BackendError as exc:
+            st.error(str(exc))
+            semesters = []
+        if semesters:
+            chosen = st.selectbox(
+                "Semester", semesters, format_func=lambda s: s["name"]
+            )
+            params = {"semester_id": chosen["id"]}
+            show = True
+
+    if show:
         with ui.loading():
             try:
                 classes = api_client.request(
                     "GET",
                     f"/schedules/student/{username}",
                     token=auth.get_token(),
+                    params=params,
                 )
             except api_client.BackendError as exc:
                 st.error(str(exc))

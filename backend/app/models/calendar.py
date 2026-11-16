@@ -84,4 +84,6 @@ class CalendarEventSync(Base):
         DateTime(timezone=True), default=utcnow, onupdate=utcnow
     )
 
-    calendar_link: Mapped[CalendarLink] = relationship(back_populates="event_syncs")
+    calendar_link: Mapped[CalendarLink] = relationship(
+        back_populates="event_syncs"
+    )

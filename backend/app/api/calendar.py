@@ -34,7 +34,9 @@ def push_schedule_to_calendar(
     try:
         decrypt_refresh_token(link.refresh_token)
     except (RuntimeError, ValueError):
-        raise HTTPException(status_code=404, detail="No calendar found") from None
+        raise HTTPException(
+            status_code=404, detail="No calendar found"
+        ) from None
 
     schedule = (
         db.query(Schedule)

@@ -143,7 +143,9 @@ def test_oauth_connect_binds_state_and_links_encrypted_refresh_token(
     monkeypatch.setattr(calendar_oauth, "_flow", make_flow)
     connect = client.get("/calendar/oauth/connect")
     assert connect.status_code == 200
-    assert captured["authorization_options"]["prompt"] == "select_account consent"
+    assert (
+        captured["authorization_options"]["prompt"] == "select_account consent"
+    )
     state = db_session.query(CalendarOAuthState).one()
 
     callback = client.get(
@@ -227,8 +229,9 @@ def test_successful_reconnection_replaces_existing_encrypted_token(
         decrypt_refresh_token(existing_link.refresh_token)
         == "new-refresh-token"
     )
-    assert existing_link.google_account_fingerprint == google_account_fingerprint(
-        "account-two"
+    assert (
+        existing_link.google_account_fingerprint
+        == google_account_fingerprint("account-two")
     )
     assert db_session.query(CalendarEventSync).count() == 1
     assert old_sync.google_account_fingerprint == google_account_fingerprint(
@@ -265,7 +268,9 @@ def test_oauth_rejects_missing_account_identity_without_replacing_link(
     monkeypatch.setattr(
         calendar_oauth,
         "_flow",
-        lambda state=None: captured.update(state=state) or FlowWithoutIdentity(),
+        lambda state=None: (
+            captured.update(state=state) or FlowWithoutIdentity()
+        ),
     )
     assert client.get("/calendar/oauth/connect").status_code == 200
     response = client.get(
@@ -279,7 +284,10 @@ def test_oauth_rejects_missing_account_identity_without_replacing_link(
     )
     db_session.refresh(existing_link)
     assert existing_link.refresh_token is not None
-    assert decrypt_refresh_token(existing_link.refresh_token) == "old-refresh-token"
+    assert (
+        decrypt_refresh_token(existing_link.refresh_token)
+        == "old-refresh-token"
+    )
     assert existing_link.google_account_fingerprint == old_fingerprint
 
 
@@ -350,11 +358,13 @@ def test_oauth_cancellation_redirects_without_changing_existing_link(
     monkeypatch.setattr(
         calendar_oauth,
         "_flow",
-        lambda state=None: captured.update(state=state)
-        or SimpleNamespace(
-            authorization_url=lambda **_kwargs: (
-                "https://accounts.google.test/authorize",
-                None,
+        lambda state=None: (
+            captured.update(state=state)
+            or SimpleNamespace(
+                authorization_url=lambda **_kwargs: (
+                    "https://accounts.google.test/authorize",
+                    None,
+                )
             )
         ),
     )
@@ -372,7 +382,10 @@ def test_oauth_cancellation_redirects_without_changing_existing_link(
     db_session.refresh(existing_link)
     assert existing_link.google_account_fingerprint == old_fingerprint
     assert existing_link.refresh_token is not None
-    assert decrypt_refresh_token(existing_link.refresh_token) == "old-refresh-token"
+    assert (
+        decrypt_refresh_token(existing_link.refresh_token)
+        == "old-refresh-token"
+    )
 
 
 def test_only_instructors_can_start_oauth(
@@ -596,7 +609,9 @@ def test_revoked_credentials_require_reconnection(
         user_id=user.id,
         provider="google",
         calendar_id="primary",
-        google_account_fingerprint=google_account_fingerprint("revoked-account"),
+        google_account_fingerprint=google_account_fingerprint(
+            "revoked-account"
+        ),
         refresh_token=encrypt_refresh_token("revoked-refresh-token"),
     )
     db_session.add_all([user, link])
