@@ -31,6 +31,7 @@ class Settings(BaseSettings):
     google_client_id: str | None = None
     google_client_secret: str | None = None
     google_redirect_uri: str = "http://localhost:8000/calendar/oauth/callback"
+    frontend_url: str = "http://localhost:8501"
     calendar_token_encryption_key: str | None = None
     calendar_demo_mode: bool = False
 

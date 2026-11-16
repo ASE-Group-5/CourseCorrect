@@ -17,7 +17,10 @@ from app.services.calendar_demo import (
     build_demo_event,
     demo_mode_enabled,
 )
-from app.services.calendar_security import encrypt_refresh_token
+from app.services.calendar_security import (
+    encrypt_refresh_token,
+    google_account_fingerprint,
+)
 from tests.test_user_stories_7_8 import make_schedule
 
 
@@ -62,6 +65,7 @@ def test_enabled_push_uses_only_authenticated_instructor_entries(
         CalendarLink(
             user_id=entry.instructor_id,
             calendar_id="primary",
+            google_account_fingerprint=google_account_fingerprint("test-account"),
             refresh_token=encrypt_refresh_token("refresh-token"),
         )
     )
@@ -90,6 +94,7 @@ def test_google_failure_does_not_report_success(
         CalendarLink(
             user_id=entry.instructor_id,
             calendar_id="primary",
+            google_account_fingerprint=google_account_fingerprint("test-account"),
             refresh_token=encrypt_refresh_token("refresh-token"),
         )
     )
@@ -126,3 +131,28 @@ def test_no_calendar_still_wins_when_demo_mode_is_enabled(
 
     assert response.status_code == 404
     assert response.json()["detail"] == "No calendar found"
+
+
+def test_legacy_calendar_link_requires_reconnection(
+    client: TestClient, db_session, monkeypatch
+) -> None:
+    _coordinator, entry = make_schedule(db_session)
+    db_session.add(
+        CalendarLink(
+            user_id=entry.instructor_id,
+            calendar_id="primary",
+            refresh_token=encrypt_refresh_token("refresh-token"),
+        )
+    )
+    db_session.commit()
+    app.dependency_overrides[get_current_user] = lambda: entry.instructor
+    monkeypatch.setenv("CALENDAR_DEMO_MODE", "true")
+
+    status = client.get("/calendar/status")
+    assert status.status_code == 200
+    assert status.json()["connected"] is False
+    assert status.json()["reconnect_required"] is True
+
+    response = client.post("/calendar/push")
+    assert response.status_code == 409
+    assert "Reconnect Google Calendar" in response.json()["detail"]

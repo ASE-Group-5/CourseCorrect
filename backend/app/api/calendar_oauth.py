@@ -6,6 +6,7 @@ import secrets
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import RedirectResponse
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -19,11 +20,12 @@ from app.services.calendar_demo import demo_mode_enabled
 from app.services.calendar_security import (
     decrypt_refresh_token,
     encrypt_refresh_token,
+    google_account_fingerprint,
 )
 
 router = APIRouter(prefix="/calendar", tags=["calendar"])
 logger = logging.getLogger(__name__)
-SCOPES = ("https://www.googleapis.com/auth/calendar.events",)
+SCOPES = ("openid", "https://www.googleapis.com/auth/calendar.events")
 STATE_TTL = timedelta(minutes=10)
 
 
@@ -63,6 +65,30 @@ def _log_oauth_failure(category: str, error: Exception) -> None:
     )
 
 
+def _frontend_result(result: str) -> RedirectResponse:
+    """Return the browser to schedules with a non-sensitive result code."""
+    frontend_url = get_settings().frontend_url.rstrip("/")
+    return RedirectResponse(
+        f"{frontend_url}/schedules?calendar_connection={result}", status_code=303
+    )
+
+
+def _consume_oauth_state(
+    db: Session, oauth_state: CalendarOAuthState, now: datetime
+) -> None:
+    """Mark a failed or cancelled OAuth attempt as used without link changes."""
+    oauth_state.used_at = now
+    try:
+        db.commit()
+    except SQLAlchemyError as exc:
+        db.rollback()
+        logger.error(
+            "Google Calendar OAuth failure category=state_persistence_failure "
+            "exception_type=%s",
+            type(exc).__name__,
+        )
+
+
 def _flow(state: str | None = None):
     settings = get_settings()
     if not settings.google_client_id or not settings.google_client_secret:
@@ -95,6 +121,33 @@ def _flow(state: str | None = None):
     )
 
 
+def _google_account_fingerprint(credentials) -> str:
+    """Verify Google's ID token and fingerprint its stable account subject."""
+    id_token = getattr(credentials, "id_token", None)
+    if not isinstance(id_token, str) or not id_token:
+        raise ValueError("Google account identity is unavailable")
+    try:
+        from google.auth.transport.requests import Request
+        from google.oauth2.id_token import verify_oauth2_token
+    except ImportError as exc:
+        raise RuntimeError(
+            "Google Calendar dependencies are not installed"
+        ) from exc
+
+    try:
+        claims = verify_oauth2_token(
+            id_token, Request(), audience=get_settings().google_client_id
+        )
+    except Exception as exc:
+        raise ValueError(
+            "Google account identity could not be verified"
+        ) from exc
+    account_id = claims.get("sub")
+    if not isinstance(account_id, str) or not account_id:
+        raise ValueError("Google account identity is unavailable")
+    return google_account_fingerprint(account_id)
+
+
 @router.get("/oauth/connect")
 def connect_google_calendar(
     user: CurrentUser = Depends(require_role(Role.INSTRUCTOR)),
@@ -113,7 +166,9 @@ def connect_google_calendar(
     flow = _flow(state)
     flow.redirect_uri = get_settings().google_redirect_uri
     authorization_url, _ = flow.authorization_url(
-        access_type="offline", include_granted_scopes="true", prompt="consent"
+        access_type="offline",
+        include_granted_scopes="true",
+        prompt="select_account consent",
     )
     return {"authorization_url": authorization_url}
 
@@ -121,9 +176,10 @@ def connect_google_calendar(
 @router.get("/oauth/callback")
 def google_calendar_callback(
     state: str,
-    code: str,
+    code: str | None = None,
+    error: str | None = None,
     db: Session = Depends(get_db),
-) -> dict[str, str]:
+) -> RedirectResponse:
     """Validate one-time state, exchange code, and encrypt the refresh token."""
     state_hash = hashlib.sha256(state.encode()).hexdigest()
     oauth_state = (
@@ -148,20 +204,40 @@ def google_calendar_callback(
         )
         raise HTTPException(status_code=400, detail="Invalid or expired OAuth state")
 
+    if error is not None:
+        _consume_oauth_state(db, oauth_state, now)
+        if error == "access_denied":
+            logger.info("Google Calendar OAuth result category=user_cancelled")
+            return _frontend_result("cancelled")
+        logger.warning("Google Calendar OAuth failure category=provider_error")
+        return _frontend_result("failed")
+    if not code:
+        _consume_oauth_state(db, oauth_state, now)
+        logger.warning("Google Calendar OAuth failure category=missing_code")
+        return _frontend_result("failed")
+
     flow = _flow(state)
     flow.redirect_uri = get_settings().google_redirect_uri
     try:
         flow.fetch_token(code=code)
     except Exception as exc:
         _log_oauth_failure(_oauth_error_category(exc), exc)
-        raise HTTPException(status_code=400, detail="Google authorization failed") from exc
+        _consume_oauth_state(db, oauth_state, now)
+        return _frontend_result("failed")
     refresh_token = getattr(flow.credentials, "refresh_token", None)
     if not refresh_token:
         logger.warning(
             "Google Calendar OAuth failure category=missing_refresh_token "
             "exception_type=credential_response"
         )
-        raise HTTPException(status_code=400, detail="Google did not provide a refresh token")
+        _consume_oauth_state(db, oauth_state, now)
+        return _frontend_result("failed")
+    try:
+        account_fingerprint = _google_account_fingerprint(flow.credentials)
+    except (RuntimeError, ValueError) as exc:
+        _log_oauth_failure("google_account_identity_validation_failure", exc)
+        _consume_oauth_state(db, oauth_state, now)
+        return _frontend_result("failed")
 
     link = (
         db.query(CalendarLink)
@@ -176,19 +252,22 @@ def google_calendar_callback(
             "exception_type=%s",
             type(exc).__name__,
         )
-        raise HTTPException(status_code=400, detail="Google authorization failed") from exc
+        _consume_oauth_state(db, oauth_state, now)
+        return _frontend_result("failed")
 
     if link is None:
         link = CalendarLink(
             user_id=oauth_state.user_id,
             provider="google",
             calendar_id="primary",
+            google_account_fingerprint=account_fingerprint,
             refresh_token=encrypted_refresh_token,
         )
         db.add(link)
     else:
         link.provider = "google"
         link.calendar_id = "primary"
+        link.google_account_fingerprint = account_fingerprint
         link.refresh_token = encrypted_refresh_token
     oauth_state.used_at = now
     try:
@@ -200,8 +279,8 @@ def google_calendar_callback(
             "exception_type=%s",
             type(exc).__name__,
         )
-        raise HTTPException(status_code=400, detail="Google authorization failed") from exc
-    return {"status": "connected", "provider": "google"}
+        return _frontend_result("failed")
+    return _frontend_result("connected")
 
 
 @router.get("/status")
@@ -215,12 +294,15 @@ def calendar_status(
     reconnect_required = False
     linked = link is not None
     if link and link.refresh_token:
-        try:
-            decrypt_refresh_token(link.refresh_token)
-            GoogleCalendarService(link).validate_credentials()
-            connected = True
-        except (RuntimeError, ValueError):
+        if not link.google_account_fingerprint:
             reconnect_required = True
+        else:
+            try:
+                decrypt_refresh_token(link.refresh_token)
+                GoogleCalendarService(link).validate_credentials()
+                connected = True
+            except (RuntimeError, ValueError):
+                reconnect_required = True
     return {
         "connected": connected,
         "linked": linked,

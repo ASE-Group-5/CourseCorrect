@@ -9,6 +9,11 @@ import ui
 st.title("Requests")
 
 user = auth.current_user()
+
+if user is None:
+    st.warning("Please log in to access modification requests.")
+    st.stop()
+
 is_coordinator = user["role"] == "coordinator"
 token = auth.get_token()
 
