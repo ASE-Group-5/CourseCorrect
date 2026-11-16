@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import CurrentUser, require_role
 from app.db.session import get_db
 from app.models.common import Role, ScheduleStatus
-from app.models.course import Enrollment
+from app.models.course import Course, Enrollment, Semester
 from app.models.schedule import Schedule, ScheduleEntry
 from app.models.user import User
 
@@ -74,6 +74,7 @@ def instructor_schedule(
 @router.get("/schedules/student/{username}")
 def student_schedule(
     username: str,
+    semester_id: int | None = None,
     db: Session = Depends(get_db),
     current_user: CurrentUser = Depends(
         require_role(Role.STUDENT, Role.COORDINATOR)
@@ -85,12 +86,17 @@ def student_schedule(
     if user is None or user.role != Role.STUDENT:
         raise HTTPException(status_code=404, detail="Student not found")
 
+    semester_filter = (
+        Schedule.semester_id == semester_id
+        if semester_id is not None
+        else Schedule.semester.has(is_active=True)
+    )
     schedule = (
         db.query(Schedule)
         .join(Schedule.semester)
         .filter(
             Schedule.status == ScheduleStatus.PUBLISHED,
-            Schedule.semester.has(is_active=True),
+            semester_filter,
         )
         .first()
     )
@@ -123,4 +129,34 @@ def student_schedule(
             "instructor_name": entry.instructor.full_name,
         }
         for entry in entries
+    ]
+
+
+@router.get("/schedules/student/{username}/semesters")
+def student_semesters(
+    username: str,
+    db: Session = Depends(get_db),
+    current_user: CurrentUser = Depends(
+        require_role(Role.STUDENT, Role.COORDINATOR)
+    ),
+) -> list[dict]:
+    """Return the semesters the given student has enrollments in."""
+    check_can_view(current_user, username)
+    user = db.query(User).filter(User.username == username).first()
+    if user is None or user.role != Role.STUDENT:
+        raise HTTPException(status_code=404, detail="Student not found")
+
+    semesters = (
+        db.query(Semester)
+        .join(Course, Course.semester_id == Semester.id)
+        .join(Enrollment, Enrollment.course_id == Course.id)
+        .filter(Enrollment.student_id == user.id)
+        .distinct()
+        .order_by(Semester.is_active.desc(), Semester.name)
+        .all()
+    )
+
+    return [
+        {"id": s.id, "name": s.name, "is_active": s.is_active}
+        for s in semesters
     ]

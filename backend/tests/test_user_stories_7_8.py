@@ -203,7 +203,9 @@ def test_push_schedule_without_schedule_date_returns_validation_error(
         CalendarLink(
             user_id=entry.instructor_id,
             calendar_id="jane@example.com",
-            google_account_fingerprint=google_account_fingerprint("test-account"),
+            google_account_fingerprint=google_account_fingerprint(
+                "test-account"
+            ),
             refresh_token=encrypt_refresh_token("refresh-token"),
         )
     )
