@@ -122,6 +122,38 @@ def test_list_users_filters_by_role_search_and_status(
     assert usernames(include_inactive=False) == ["amorgan", "jdoe", "sstudent"]
 
 
+def test_list_users_shows_active_semester_courses(
+    client: TestClient, db_session: Session, headers: dict[str, str]
+) -> None:
+    student = make_user(db_session, "sstudent", Role.STUDENT)
+    instructor = make_user(db_session, "jdoe", Role.INSTRUCTOR)
+    _, current = make_semester(db_session, "Fall 2026", ["CS201", "CS101"])
+    old, past = make_semester(db_session, "Spring 2026", ["CS900"])
+    old.is_active = False
+    db_session.add_all(
+        [
+            Enrollment(student_id=student.id, course_id=current[0].id),
+            Enrollment(student_id=student.id, course_id=current[1].id),
+            Enrollment(student_id=student.id, course_id=past[0].id),
+            CourseInstructor(
+                course_id=current[0].id,
+                instructor_id=instructor.id,
+                preference=CoursePreference.PREFERRED,
+            ),
+        ]
+    )
+    db_session.commit()
+
+    users = client.get("/users", headers=headers).json()
+
+    courses = {user["username"]: user["courses"] for user in users}
+    assert courses == {
+        "amorgan": [],
+        "jdoe": ["CS201"],
+        "sstudent": ["CS101", "CS201"],
+    }
+
+
 def test_list_users_never_returns_password_hash(
     client: TestClient, headers: dict[str, str]
 ) -> None:

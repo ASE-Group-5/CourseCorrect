@@ -204,7 +204,32 @@ def list_users(
             | User.email.ilike(pattern)
         )
     users = query.order_by(User.role, User.full_name).all()
-    return [user_to_admin_dict(user) for user in users]
+    courses = active_semester_courses(db)
+    return [
+        {**user_to_admin_dict(user), "courses": courses.get(user.id, [])}
+        for user in users
+    ]
+
+
+def active_semester_courses(db: Session) -> dict[int, list[str]]:
+    """Course codes each user studies or teaches in the active semester."""
+    links = (
+        db.query(Enrollment.student_id, Course.code)
+        .join(Course, Enrollment.course_id == Course.id)
+        .join(Semester, Course.semester_id == Semester.id)
+        .filter(Semester.is_active.is_(True))
+        .union_all(
+            db.query(CourseInstructor.instructor_id, Course.code)
+            .join(Course, CourseInstructor.course_id == Course.id)
+            .join(Semester, Course.semester_id == Semester.id)
+            .filter(Semester.is_active.is_(True))
+        )
+        .all()
+    )
+    courses: dict[int, list[str]] = {}
+    for user_id, code in links:
+        courses.setdefault(user_id, []).append(code)
+    return {user_id: sorted(codes) for user_id, codes in courses.items()}
 
 
 @router.post("/users", status_code=201)

@@ -136,50 +136,86 @@ def test_publish_replaces_published_schedule(
     response = client.post(f"/schedules/{new.id}/publish", headers=headers)
 
     assert response.status_code == 200
-    assert response.json() == {
-        "schedule_id": new.id,
-        "unpublished": [old.id],
-        "declined": 0,
-    }
+    assert response.json() == {"schedule_id": new.id, "unpublished": [old.id]}
     db_session.refresh(old)
     db_session.refresh(new)
     assert old.status == ScheduleStatus.DRAFT
     assert new.status == ScheduleStatus.PUBLISHED
 
 
-def test_publish_declines_pending_requests_on_replaced_schedule(
-    client: TestClient,
+def add_request(
     db_session: Session,
-    coordinator: User,
-    headers: dict[str, str],
+    world: World,
+    entry: ScheduleEntry,
+    status: RequestStatus = RequestStatus.PENDING,
+) -> ModificationRequest:
+    request = ModificationRequest(
+        schedule_entry_id=entry.id,
+        requester_id=world.instructor.id,
+        reason="Move me",
+        status=status,
+    )
+    db_session.add(request)
+    db_session.commit()
+    return request
+
+
+def test_publish_is_locked_while_requests_are_pending(
+    client: TestClient, db_session: Session, headers: dict[str, str]
 ) -> None:
     world = World(db_session)
     old, old_entry = world.schedule(ScheduleStatus.PUBLISHED)
     new, _ = world.schedule(ScheduleStatus.DRAFT)
-    pending = ModificationRequest(
-        schedule_entry_id=old_entry.id,
-        requester_id=world.instructor.id,
-        reason="Move me",
-    )
-    accepted = ModificationRequest(
-        schedule_entry_id=old_entry.id,
-        requester_id=world.instructor.id,
-        reason="Done already",
-        status=RequestStatus.ACCEPTED,
-    )
-    db_session.add_all([pending, accepted])
-    db_session.commit()
+    request = add_request(db_session, world, old_entry)
 
     response = client.post(f"/schedules/{new.id}/publish", headers=headers)
 
-    assert response.json()["declined"] == 1
-    db_session.refresh(pending)
-    db_session.refresh(accepted)
-    assert pending.status == RequestStatus.DECLINED
-    assert pending.reviewed_by_id == coordinator.id
-    assert pending.resolved_at is not None
-    assert f"#{new.id}" in pending.reviewer_comment
-    assert accepted.status == RequestStatus.ACCEPTED
+    assert response.status_code == 409
+    assert response.json()["detail"].startswith(
+        f"Schedule #{old.id} has 1 pending change request(s)."
+    )
+    db_session.refresh(old)
+    db_session.refresh(new)
+    db_session.refresh(request)
+    assert old.status == ScheduleStatus.PUBLISHED
+    assert new.status == ScheduleStatus.DRAFT
+    assert request.status == RequestStatus.PENDING
+
+
+@pytest.mark.parametrize(
+    "resolution", [RequestStatus.ACCEPTED, RequestStatus.DECLINED]
+)
+def test_publish_unlocks_once_requests_are_resolved(
+    client: TestClient,
+    db_session: Session,
+    headers: dict[str, str],
+    resolution: RequestStatus,
+) -> None:
+    world = World(db_session)
+    old, old_entry = world.schedule(ScheduleStatus.PUBLISHED)
+    new, _ = world.schedule(ScheduleStatus.DRAFT)
+    add_request(db_session, world, old_entry, status=resolution)
+
+    response = client.post(f"/schedules/{new.id}/publish", headers=headers)
+
+    assert response.status_code == 200
+    assert response.json()["unpublished"] == [old.id]
+
+
+def test_list_schedules_reports_pending_requests(
+    client: TestClient, db_session: Session, headers: dict[str, str]
+) -> None:
+    world = World(db_session)
+    published, entry = world.schedule(ScheduleStatus.PUBLISHED)
+    draft, _ = world.schedule(ScheduleStatus.DRAFT)
+    add_request(db_session, world, entry)
+    add_request(db_session, world, entry)
+    add_request(db_session, world, entry, status=RequestStatus.DECLINED)
+
+    rows = client.get("/schedules", headers=headers).json()
+
+    pending = {row["id"]: row["pending_requests"] for row in rows}
+    assert pending == {published.id: 2, draft.id: 0}
 
 
 def test_publish_leaves_other_semesters_alone(
