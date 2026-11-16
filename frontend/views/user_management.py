@@ -9,6 +9,10 @@ import ui
 ROLES = ["student", "instructor", "coordinator"]
 FLASH_KEY = "users_flash"
 ADD_FORM_VERSION_KEY = "users_add_form_version"
+TABLE_VERSION_KEY = "users_table_version"
+SELECTED_KEY = "users_selected_id"
+SELECTING_TABLE_KEY = "users_selecting_table"
+DIALOG_CLOSED_KEY = "users_dialog_closed"
 
 
 @st.cache_data(ttl=60, show_spinner=False)
@@ -35,7 +39,28 @@ def change(method: str, path: str, body: dict, success: str) -> None:
             return
     fetch.clear()
     st.session_state[FLASH_KEY] = success
+    # Saving can reorder the table, so start a fresh table and keep the
+    # selected user by id.
+    st.session_state[TABLE_VERSION_KEY] = (
+        st.session_state.get(TABLE_VERSION_KEY, 0) + 1
+    )
     st.rerun()
+
+
+@st.dialog("Confirm changes")
+def confirm_change(
+    user: dict, body: dict, success: str, risks: list[str]
+) -> None:
+    st.write(f"These changes to {user['full_name']} need confirming:")
+    st.markdown("\n".join(f"- {risk}" for risk in risks))
+    cancel, confirm = st.columns(2)
+    if cancel.button("Cancel"):
+        st.session_state[DIALOG_CLOSED_KEY] = True
+        st.rerun()
+    if confirm.button("Confirm", type="primary"):
+        st.session_state[DIALOG_CLOSED_KEY] = True
+        change("PATCH", f"/users/{user['id']}", body, success)
+        st.session_state.pop(DIALOG_CLOSED_KEY, None)  # Saving failed.
 
 
 def course_label(course: dict) -> str:
@@ -91,13 +116,26 @@ def edit_details(user: dict) -> None:
             )
         if is_me:
             st.caption("You can't change your own role or deactivate yourself.")
-        if st.form_submit_button("Save changes", type="primary"):
-            change(
-                "PATCH",
-                f"/users/{user['id']}",
-                body,
-                f"Changes saved for {full_name}",
+        submitted = st.form_submit_button("Save changes", type="primary")
+
+    # The rerun that closes the dialog still reports the form as submitted.
+    dialog_closed = st.session_state.pop(DIALOG_CLOSED_KEY, False)
+    if submitted and not dialog_closed:
+        success = f"Changes saved for {full_name}"
+        risks = []
+        if role != user["role"]:
+            risks.append(
+                f"Change role from {user['role'].title()} to {role.title()}. "
+                "Course links that no longer apply are removed."
             )
+        if user["is_active"] and not is_active:
+            risks.append(
+                "Deactivate the account. They will not be able to log in."
+            )
+        if risks:
+            confirm_change(user, body, success, risks)
+        else:
+            change("PATCH", f"/users/{user['id']}", body, success)
     st.caption(
         "Changing a role removes course links that no longer apply. "
         "Deactivated users can't log in; anyone already logged in is signed "
@@ -205,7 +243,9 @@ def manage_users() -> None:
         st.info("No users match.")
         return
 
-    st.dataframe(
+    version = st.session_state.get(TABLE_VERSION_KEY, 0)
+    table_key = f"users-table-{version}-{role}-{search}-{show_inactive}"
+    event = st.dataframe(
         [
             {
                 "Name": u["full_name"],
@@ -214,24 +254,29 @@ def manage_users() -> None:
                 "Role": u["role"].title(),
                 "Active": u["is_active"],
                 "Coordinator": u["coordinator_name"] or "",
+                "Courses": ", ".join(u["courses"]),
             }
             for u in users.values()
         ],
         hide_index=True,
         width="stretch",
+        key=table_key,
+        on_select="rerun",
+        selection_mode="single-row",
     )
 
-    user_id = st.selectbox(
-        "Edit user",
-        list(users),
-        index=None,
-        format_func=lambda uid: (
-            f"{users[uid]['full_name']} "
-            f"({users[uid]['username']}, {users[uid]['role']})"
-        ),
-        placeholder="Choose a user to edit",
-    )
-    if user_id is None:
+    rows = event.selection.rows
+    if rows:
+        st.session_state[SELECTED_KEY] = list(users)[rows[0]]
+        st.session_state[SELECTING_TABLE_KEY] = table_key
+    elif st.session_state.get(SELECTING_TABLE_KEY) == table_key:
+        # The row was clicked again to clear the selection.
+        st.session_state.pop(SELECTED_KEY, None)
+        st.session_state.pop(SELECTING_TABLE_KEY, None)
+
+    user_id = st.session_state.get(SELECTED_KEY)
+    if user_id not in users:
+        st.caption("Select a user in the table to edit them.")
         return
     user = users[user_id]
     with st.container(border=True):

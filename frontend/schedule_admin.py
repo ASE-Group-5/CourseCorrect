@@ -23,11 +23,6 @@ def publish(schedule_id: int) -> None:
     message = f"Published schedule #{outcome['schedule_id']}."
     for old_id in outcome["unpublished"]:
         message += f" Schedule #{old_id} is now a draft."
-    if outcome["declined"]:
-        message += (
-            f" {outcome['declined']} pending change request(s) on it "
-            "were declined."
-        )
     st.session_state[FLASH_KEY] = message
     st.rerun()
 
@@ -102,6 +97,7 @@ def semester_schedules() -> None:
                 "Status": s["status"].title(),
                 "Fitness": s["fitness"],
                 "Conflicts": s["conflicts"],
+                "Pending requests": s["pending_requests"],
                 "Classes": s["classes"],
                 "Created": (s["created_at"] or "")[:16].replace("T", " "),
                 "Created by": s["created_by"] or "",
@@ -125,6 +121,7 @@ def semester_schedules() -> None:
     if not show_classes(schedule_id):
         return
 
+    locked = [by_id[sid] for sid in published if by_id[sid]["pending_requests"]]
     if chosen["status"] == "published":
         st.caption(f"Schedule #{schedule_id} is the published schedule.")
     elif chosen["conflicts"]:
@@ -132,5 +129,16 @@ def semester_schedules() -> None:
             f"Schedule #{schedule_id} has {chosen['conflicts']} conflict(s) "
             "and cannot be published."
         )
-    elif st.button(f"Publish schedule #{schedule_id}", type="primary"):
-        publish(schedule_id)
+    else:
+        if locked:
+            st.warning(
+                f"Publishing is locked: schedule #{locked[0]['id']} has "
+                f"{locked[0]['pending_requests']} pending change request(s). "
+                "Accept or decline them on the Requests page first."
+            )
+        if st.button(
+            f"Publish schedule #{schedule_id}",
+            type="primary",
+            disabled=bool(locked),
+        ):
+            publish(schedule_id)

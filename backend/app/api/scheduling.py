@@ -5,7 +5,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlalchemy.orm import Session
 
 from app.api import modifications as mods
@@ -116,6 +116,22 @@ def _conflicts(schedule: Schedule) -> int:
     return len((schedule.report or {}).get("hard_violations", []))
 
 
+def _pending_requests(db: Session, schedule_ids: list[int]) -> dict[int, int]:
+    """Number of pending change requests on each of the given schedules."""
+    rows = (
+        db.query(ScheduleEntry.schedule_id, func.count(ModificationRequest.id))
+        .select_from(ModificationRequest)
+        .join(ModificationRequest.entry)
+        .filter(
+            ScheduleEntry.schedule_id.in_(schedule_ids),
+            ModificationRequest.status == RequestStatus.PENDING,
+        )
+        .group_by(ScheduleEntry.schedule_id)
+        .all()
+    )
+    return dict(rows)
+
+
 @router.get("/schedules")
 def list_schedules(
     semester_id: int | None = None,
@@ -131,12 +147,14 @@ def list_schedules(
         .order_by(Schedule.created_at.desc(), Schedule.id.desc())
         .all()
     )
+    pending = _pending_requests(db, [s.id for s in schedules])
     return [
         {
             "id": s.id,
             "status": s.status.value,
             "fitness": s.fitness,
             "conflicts": _conflicts(s),
+            "pending_requests": pending.get(s.id, 0),
             "classes": len(s.entries),
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "created_by": s.created_by.full_name if s.created_by else None,
@@ -178,12 +196,15 @@ def publish(
     db: Session = Depends(get_db),
     user: CurrentUser = Depends(require_role(Role.COORDINATOR)),
 ) -> dict:
-    """Publish a draft, returning the semester's published schedule to draft."""
+    """Publish a draft, returning the semester's published schedule to draft.
+
+    Refused while the published schedule has pending change requests.
+    """
     schedule = db.get(Schedule, schedule_id)
     if schedule is None:
         raise HTTPException(status_code=404, detail="Schedule not found")
     if schedule.status == ScheduleStatus.PUBLISHED:
-        return {"schedule_id": schedule.id, "unpublished": [], "declined": 0}
+        return {"schedule_id": schedule.id, "unpublished": []}
     if _conflicts(schedule):
         raise HTTPException(
             status_code=409,
@@ -200,30 +221,19 @@ def publish(
         .all()
     )
     previous_ids = [s.id for s in previous]
-    stale_requests = (
-        db.query(ModificationRequest)
-        .join(ScheduleEntry, ModificationRequest.entry)
-        .filter(
-            ScheduleEntry.schedule_id.in_(previous_ids),
-            ModificationRequest.status == RequestStatus.PENDING,
+    pending = _pending_requests(db, previous_ids)
+    if pending:
+        old_id, count = next(iter(pending.items()))
+        raise HTTPException(
+            status_code=409,
+            detail=f"Schedule #{old_id} has {count} pending change request(s). "
+            "Accept or decline them before publishing another schedule.",
         )
-        .all()
-    )
-    now = datetime.now(timezone.utc)
-    for request in stale_requests:
-        request.status = RequestStatus.DECLINED
-        request.reviewed_by_id = user.id
-        request.reviewer_comment = f"Schedule #{schedule.id} replaced the schedule this request was for."
-        request.resolved_at = now
     for old in previous:
         old.status = ScheduleStatus.DRAFT
     schedule.status = ScheduleStatus.PUBLISHED
     db.commit()
-    return {
-        "schedule_id": schedule.id,
-        "unpublished": previous_ids,
-        "declined": len(stale_requests),
-    }
+    return {"schedule_id": schedule.id, "unpublished": previous_ids}
 
 
 class RequestIn(BaseModel):
